@@ -8,7 +8,7 @@ import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 
-from vecraspy.raster import _collect_tif_paths
+from vecraspy.raster import _collect_tif_paths, merge_tifs
 
 
 def _write_tif(
@@ -73,3 +73,67 @@ def test_collect_empty_directory_raises(tmp_path):
 def test_collect_missing_file_in_list_raises(tmp_path):
     with pytest.raises(FileNotFoundError, match="file not found"):
         _collect_tif_paths([tmp_path / "ghost.tif"])
+
+
+def test_merge_tifs_from_list_stitches_horizontally(tmp_path):
+    t1 = tmp_path / "tile1.tif"
+    t2 = tmp_path / "tile2.tif"
+    _write_tif(t1, np.ones((4, 4), dtype=np.float32), west=0, east=4, south=0, north=4)
+    _write_tif(t2, np.full((4, 4), 2.0, dtype=np.float32), west=4, east=8, south=0, north=4)
+
+    out = tmp_path / "merged.tif"
+    result = merge_tifs([t1, t2], out)
+
+    assert result == out
+    assert out.exists()
+    with rasterio.open(out) as ds:
+        assert ds.width == 8
+        assert ds.height == 4
+        assert ds.count == 1
+
+
+def test_merge_tifs_from_directory(tmp_path):
+    tiles = tmp_path / "tiles"
+    tiles.mkdir()
+    _write_tif(tiles / "a.tif", np.ones((4, 4), dtype=np.float32), west=0, east=4, south=0, north=4)
+    _write_tif(tiles / "b.tif", np.ones((4, 4), dtype=np.float32), west=4, east=8, south=0, north=4)
+
+    out = tmp_path / "merged.tif"
+    result = merge_tifs(tiles, out)
+
+    assert result == out
+    with rasterio.open(out) as ds:
+        assert ds.width == 8
+
+
+def test_merge_tifs_returns_path(tmp_path):
+    t1 = tmp_path / "t.tif"
+    _write_tif(t1, np.ones((4, 4), dtype=np.float32))
+    out = tmp_path / "out.tif"
+    result = merge_tifs([t1], out)
+    assert isinstance(result, Path)
+    assert result == out
+
+
+def test_merge_tifs_preserves_nodata_from_first_tif(tmp_path):
+    t1 = tmp_path / "t1.tif"
+    t2 = tmp_path / "t2.tif"
+    data = np.ones((4, 4), dtype=np.float32)
+    data[0, 0] = -9999.0
+    _write_tif(t1, data, west=0, east=4, south=0, north=4, nodata=-9999.0)
+    _write_tif(t2, np.ones((4, 4), dtype=np.float32), west=4, east=8, south=0, north=4, nodata=-9999.0)
+
+    out = tmp_path / "merged.tif"
+    merge_tifs([t1, t2], out)
+
+    with rasterio.open(out) as ds:
+        assert ds.nodata == -9999.0
+
+
+def test_merge_tifs_caller_overrides_nodata(tmp_path):
+    t1 = tmp_path / "t.tif"
+    _write_tif(t1, np.ones((4, 4), dtype=np.float32), nodata=-1.0)
+    out = tmp_path / "out.tif"
+    merge_tifs([t1], out, nodata=0.0)
+    with rasterio.open(out) as ds:
+        assert ds.nodata == 0.0
