@@ -137,3 +137,27 @@ def test_merge_tifs_caller_overrides_nodata(tmp_path):
     merge_tifs([t1], out, nodata=0.0)
     with rasterio.open(out) as ds:
         assert ds.nodata == 0.0
+
+
+def test_merge_tifs_invalid_resampling_raises(tmp_path):
+    t1 = tmp_path / "t.tif"
+    _write_tif(t1, np.ones((4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="invalid resampling"):
+        merge_tifs([t1], tmp_path / "out.tif", resampling="notamethod")
+
+
+def test_merge_tifs_missing_file_in_list_raises(tmp_path):
+    with pytest.raises(FileNotFoundError, match="file not found"):
+        merge_tifs([tmp_path / "ghost.tif"], tmp_path / "out.tif")
+
+
+def test_merge_tifs_missing_source_directory_raises(tmp_path):
+    with pytest.raises(FileNotFoundError, match="directory not found"):
+        merge_tifs(tmp_path / "nonexistent", tmp_path / "out.tif")
+
+
+def test_merge_tifs_empty_directory_raises(tmp_path):
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    with pytest.raises(ValueError, match="no TIF files found"):
+        merge_tifs(empty, tmp_path / "out.tif")
