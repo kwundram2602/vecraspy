@@ -67,3 +67,77 @@ def test_plot_slope_all_nodata_raises(tmp_path):
     _write_slope_tif(tif, data, nodata=-9999.0)
     with pytest.raises(ValueError, match="no valid"):
         plot_slope(tif)
+
+
+def test_plot_slope_returns_figure_and_axes(tmp_path):
+    tif = tmp_path / "slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 30.0, dtype=np.float32))
+    fig, ax = plot_slope(tif)
+    assert isinstance(fig, Figure)
+    assert isinstance(ax, Axes)
+    plt.close(fig)
+
+
+def test_plot_slope_degrees_fixed_range(tmp_path):
+    tif = tmp_path / "slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 30.0, dtype=np.float32))
+    fig, ax = plot_slope(tif, units="degrees")
+    vmin, vmax = ax.images[0].get_clim()
+    assert vmin == 0.0
+    assert vmax == 90.0
+    plt.close(fig)
+
+
+def test_plot_slope_radians_fixed_range(tmp_path):
+    tif = tmp_path / "slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 0.5, dtype=np.float32))
+    fig, ax = plot_slope(tif, units="radians")
+    vmin, vmax = ax.images[0].get_clim()
+    assert vmin == 0.0
+    assert abs(vmax - math.pi / 2) < 1e-6
+    plt.close(fig)
+
+
+def test_plot_slope_percent_fixed_range(tmp_path):
+    tif = tmp_path / "slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 50.0, dtype=np.float32))
+    fig, ax = plot_slope(tif, units="percent")
+    vmin, vmax = ax.images[0].get_clim()
+    assert vmin == 0.0
+    assert vmax == 100.0
+    plt.close(fig)
+
+
+def test_plot_slope_colorbar_label_degrees(tmp_path):
+    tif = tmp_path / "slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 30.0, dtype=np.float32))
+    fig, ax = plot_slope(tif, units="degrees", show_colorbar=True)
+    colorbar_ax = fig.axes[-1]
+    assert colorbar_ax.get_ylabel() == "Slope (°)"
+    plt.close(fig)
+
+
+def test_plot_slope_default_title_is_file_stem(tmp_path):
+    tif = tmp_path / "my_slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 30.0, dtype=np.float32))
+    fig, ax = plot_slope(tif)
+    assert ax.get_title() == "my_slope"
+    plt.close(fig)
+
+
+def test_plot_slope_custom_title(tmp_path):
+    tif = tmp_path / "slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 30.0, dtype=np.float32))
+    fig, ax = plot_slope(tif, title="My slope map")
+    assert ax.get_title() == "My slope map"
+    plt.close(fig)
+
+
+def test_plot_slope_accepts_existing_axes(tmp_path):
+    tif = tmp_path / "slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 30.0, dtype=np.float32))
+    fig_existing, ax_existing = plt.subplots()
+    fig, ax = plot_slope(tif, ax=ax_existing)
+    assert ax is ax_existing
+    assert fig is fig_existing
+    plt.close(fig)

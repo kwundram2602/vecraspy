@@ -80,7 +80,31 @@ def plot_slope(
             f"no valid (non-nodata) pixels in band {band} of {slope_path}"
         )
 
-    raise NotImplementedError
+    vmin, vmax, colorbar_label = _SLOPE_UNIT_STYLES[units]
+    extent = [bounds.left, bounds.right, bounds.bottom, bounds.top]
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=DEFAULT_FIGURE_SIZE)
+    else:
+        fig = ax.get_figure()
+
+    img = ax.imshow(
+        data,
+        cmap=cmap,
+        vmin=vmin,
+        vmax=vmax,
+        extent=extent,
+        origin="upper",
+    )
+
+    ax.set_title(title if title is not None else slope_path.stem)
+    ax.set_xlabel("Easting")
+    ax.set_ylabel("Northing")
+
+    if show_colorbar:
+        fig.colorbar(img, ax=ax, label=colorbar_label)
+
+    return fig, ax
 
 
 def plot_dsm(
