@@ -161,3 +161,28 @@ def test_merge_tifs_empty_directory_raises(tmp_path):
     empty.mkdir()
     with pytest.raises(ValueError, match="no TIF files found"):
         merge_tifs(empty, tmp_path / "out.tif")
+
+
+def test_merge_tifs_reprojects_to_target_crs(tmp_path):
+    t1 = tmp_path / "utm.tif"
+    t2 = tmp_path / "wgs84.tif"
+    _write_tif(t1, np.ones((4, 4), dtype=np.float32), crs="EPSG:32632", west=500000, east=500004, south=5400000, north=5400004)
+    _write_tif(t2, np.ones((4, 4), dtype=np.float32), crs="EPSG:4326", west=9.0, east=9.001, south=48.7, north=48.701)
+
+    out = tmp_path / "merged.tif"
+    merge_tifs([t1, t2], out, target_crs="EPSG:32632")
+
+    with rasterio.open(out) as ds:
+        assert ds.crs.to_epsg() == 32632
+
+
+def test_merge_tifs_uses_target_resolution(tmp_path):
+    t1 = tmp_path / "tile.tif"
+    _write_tif(t1, np.ones((4, 4), dtype=np.float32), west=0, east=4, south=0, north=4)
+
+    out = tmp_path / "out.tif"
+    merge_tifs([t1], out, target_resolution=(2.0, 2.0))
+
+    with rasterio.open(out) as ds:
+        assert abs(ds.transform.a - 2.0) < 1e-6
+        assert abs(abs(ds.transform.e) - 2.0) < 1e-6

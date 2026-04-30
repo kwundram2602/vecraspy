@@ -1,0 +1,46 @@
+[project]
+name = "vecraspy"
+version = "0.1.0"
+description = "Raster and vector utility functions"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "rasterio",
+    "geopandas",
+    "numpy",
+    "shapely>=2.1.2",
+    "matplotlib>=3.10.9",
+]
+
+[project.scripts]
+install-local = "vecraspy.tools.install_local:main"
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov"]
+
+[project.urls]
+Homepage = ""
+Repository = ""
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vecraspy"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = []
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.15.12",
+    "ty>=0.0.33",
+]

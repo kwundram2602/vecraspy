@@ -26,6 +26,8 @@ def _collect_tif_paths(source: list[Path | str] | Path | str) -> list[Path]:
     source_path = Path(source)
     if not source_path.exists():
         raise FileNotFoundError(f"directory not found: {source_path}")
+    if not source_path.is_dir():
+        raise ValueError(f"expected a directory, got a file: {source_path}")
 
     paths = sorted(
         p for p in source_path.iterdir()
@@ -95,18 +97,20 @@ def merge_tifs(
     sources = [rasterio.open(p) for p in tif_paths]
     vrts: list[WarpedVRT] = []
     try:
-        vrts = [
-            WarpedVRT(
-                src,
-                crs=resolved_crs,
-                resampling=resampling_enum,
-                target_aligned_pixels=True,
-                res=resolved_res,
-                nodata=resolved_nodata,
+        for src in sources:
+            vrts.append(
+                WarpedVRT(
+                    src,
+                    crs=resolved_crs,
+                    resampling=resampling_enum,
+                    nodata=resolved_nodata,
+                )
             )
-            for src in sources
-        ]
-        merged_array, merged_transform = _rasterio_merge(vrts, nodata=resolved_nodata)
+        merged_array, merged_transform = _rasterio_merge(
+            vrts,
+            res=resolved_res,
+            nodata=resolved_nodata,
+        )
     finally:
         for vrt in vrts:
             vrt.close()
