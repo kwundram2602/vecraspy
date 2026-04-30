@@ -42,3 +42,28 @@ def _write_slope_tif(
         nodata=nodata,
     ) as dst:
         dst.write(data, 1)
+
+
+import pytest
+
+from vecraspy.plot import plot_slope
+
+
+def test_plot_slope_invalid_units_raises(tmp_path):
+    tif = tmp_path / "slope.tif"
+    _write_slope_tif(tif, np.full((4, 4), 30.0, dtype=np.float32))
+    with pytest.raises(ValueError, match="invalid units"):
+        plot_slope(tif, units="gradians")
+
+
+def test_plot_slope_missing_file_raises(tmp_path):
+    with pytest.raises(FileNotFoundError):
+        plot_slope(tmp_path / "ghost.tif")
+
+
+def test_plot_slope_all_nodata_raises(tmp_path):
+    tif = tmp_path / "slope.tif"
+    data = np.full((4, 4), -9999.0, dtype=np.float32)
+    _write_slope_tif(tif, data, nodata=-9999.0)
+    with pytest.raises(ValueError, match="no valid"):
+        plot_slope(tif)
