@@ -35,7 +35,27 @@ def test_read_points_preserves_crs(tmp_path):
 
 
 def test_trajectory_dataclass():
-    gdf = gpd.GeoDataFrame({"geometry": [Point(0.0, 0.0)]}, crs="EPSG:4326")
+    geom = Point(0.0, 0.0)
+    gdf = gpd.GeoDataFrame({"geometry": [geom]}, crs="EPSG:4326")
     traj = Trajectory(id="track_1", points=gdf)
     assert traj.id == "track_1"
-    assert len(traj.points) == 1
+    assert isinstance(traj.points, gpd.GeoDataFrame)
+    assert traj.points.geometry.iloc[0] == geom
+
+
+def test_trajectory_rejects_non_geodataframe():
+    import pandas as pd
+    with pytest.raises(TypeError, match="GeoDataFrame"):
+        Trajectory(id="x", points=pd.DataFrame({"a": [1]}))
+
+
+def test_read_points_layer_kwarg(tmp_path):
+    gdf_a = gpd.GeoDataFrame({"geometry": [Point(1.0, 1.0)]}, crs="EPSG:4326")
+    gdf_b = gpd.GeoDataFrame({"geometry": [Point(9.0, 9.0)]}, crs="EPSG:4326")
+    path = tmp_path / "multi.gpkg"
+    gdf_a.to_file(path, driver="GPKG", layer="layer_a")
+    gdf_b.to_file(path, driver="GPKG", layer="layer_b")
+
+    result = read_points(path, layer="layer_b")
+    assert len(result) == 1
+    assert result.geometry.iloc[0].x == pytest.approx(9.0)
