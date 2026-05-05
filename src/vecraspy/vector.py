@@ -43,3 +43,33 @@ def group_by_id(
 ) -> dict[Any, gpd.GeoDataFrame]:
     """Split a GeoDataFrame into groups by the values in id_col."""
     return {val: group.copy() for val, group in gdf.groupby(id_col)}
+
+
+def build_trajectory(
+    gdf: gpd.GeoDataFrame,
+    sort_col: str | None = None,
+    id: Any = None,
+) -> Trajectory:
+    """Build a Trajectory from an ordered (or sortable) GeoDataFrame of points."""
+    pts = gdf.sort_values(sort_col) if sort_col is not None else gdf
+    return Trajectory(id=id, points=pts.copy())
+
+
+def build_trajectories(
+    path: Path | str,
+    id_col: str | None = None,
+    sort_col: str | None = None,
+    layer: str | None = None,
+) -> list[Trajectory]:
+    """Read a GeoPackage and return one Trajectory per unique id_col value.
+
+    If id_col is None, the entire dataset is returned as a single Trajectory.
+    """
+    gdf = read_points(path, layer=layer)
+    if id_col is None:
+        return [build_trajectory(gdf, sort_col=sort_col)]
+    groups = group_by_id(gdf, id_col)
+    return [
+        build_trajectory(pts, sort_col=sort_col, id=id_val)
+        for id_val, pts in groups.items()
+    ]

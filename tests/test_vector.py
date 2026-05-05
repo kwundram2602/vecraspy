@@ -6,7 +6,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point
 
-from vecraspy.vector import Trajectory, read_points, group_by_id
+from vecraspy.vector import Trajectory, read_points, group_by_id, build_trajectory, build_trajectories
 
 
 def _write_gpkg(tmp_path: Path, rows: list[dict]) -> Path:
@@ -83,3 +83,61 @@ def test_group_by_id_returns_geodataframes(tmp_path):
     groups = group_by_id(gdf, "id")
     for val in groups.values():
         assert isinstance(val, gpd.GeoDataFrame)
+
+
+def test_build_trajectory_preserves_points():
+    gdf = gpd.GeoDataFrame(
+        {"geometry": [Point(1.0, 1.0), Point(2.0, 2.0)]},
+        crs="EPSG:4326",
+    )
+    traj = build_trajectory(gdf, id="x")
+    assert isinstance(traj, Trajectory)
+    assert len(traj.points) == 2
+    assert traj.id == "x"
+
+
+def test_build_trajectory_sorts_by_sort_col():
+    gdf = gpd.GeoDataFrame(
+        {
+            "geometry": [Point(3.0, 3.0), Point(1.0, 1.0), Point(2.0, 2.0)],
+            "t": [3, 1, 2],
+        },
+        crs="EPSG:4326",
+    )
+    traj = build_trajectory(gdf, sort_col="t")
+    xs = [geom.x for geom in traj.points.geometry]
+    assert xs == [1.0, 2.0, 3.0]
+
+
+def test_build_trajectories_no_id_col(tmp_path):
+    path = _write_gpkg(tmp_path, [
+        {"geometry": Point(0.0, 0.0)},
+        {"geometry": Point(1.0, 1.0)},
+    ])
+    result = build_trajectories(path)
+    assert len(result) == 1
+    assert result[0].id is None
+    assert len(result[0].points) == 2
+
+
+def test_build_trajectories_with_id_col(tmp_path):
+    path = _write_gpkg(tmp_path, [
+        {"geometry": Point(0.0, 0.0), "tid": "a"},
+        {"geometry": Point(1.0, 0.0), "tid": "b"},
+        {"geometry": Point(2.0, 0.0), "tid": "a"},
+    ])
+    result = build_trajectories(path, id_col="tid")
+    assert len(result) == 2
+    ids = {t.id for t in result}
+    assert ids == {"a", "b"}
+
+
+def test_build_trajectories_sort_col(tmp_path):
+    path = _write_gpkg(tmp_path, [
+        {"geometry": Point(3.0, 0.0), "tid": "a", "t": 3},
+        {"geometry": Point(1.0, 0.0), "tid": "a", "t": 1},
+        {"geometry": Point(2.0, 0.0), "tid": "a", "t": 2},
+    ])
+    result = build_trajectories(path, id_col="tid", sort_col="t")
+    xs = [geom.x for geom in result[0].points.geometry]
+    assert xs == [1.0, 2.0, 3.0]
