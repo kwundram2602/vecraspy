@@ -6,7 +6,7 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point
 
-from vecraspy.vector import Trajectory, read_points
+from vecraspy.vector import Trajectory, read_points, group_by_id
 
 
 def _write_gpkg(tmp_path: Path, rows: list[dict]) -> Path:
@@ -59,3 +59,27 @@ def test_read_points_layer_kwarg(tmp_path):
     result = read_points(path, layer="layer_b")
     assert len(result) == 1
     assert result.geometry.iloc[0].x == pytest.approx(9.0)
+
+
+def test_group_by_id_splits_into_correct_groups(tmp_path):
+    path = _write_gpkg(tmp_path, [
+        {"geometry": Point(1.0, 1.0), "track_id": "a"},
+        {"geometry": Point(2.0, 2.0), "track_id": "b"},
+        {"geometry": Point(3.0, 3.0), "track_id": "a"},
+    ])
+    gdf = read_points(path)
+    groups = group_by_id(gdf, "track_id")
+    assert set(groups.keys()) == {"a", "b"}
+    assert len(groups["a"]) == 2
+    assert len(groups["b"]) == 1
+
+
+def test_group_by_id_returns_geodataframes(tmp_path):
+    path = _write_gpkg(tmp_path, [
+        {"geometry": Point(0.0, 0.0), "id": 1},
+        {"geometry": Point(1.0, 1.0), "id": 2},
+    ])
+    gdf = read_points(path)
+    groups = group_by_id(gdf, "id")
+    for val in groups.values():
+        assert isinstance(val, gpd.GeoDataFrame)

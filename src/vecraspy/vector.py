@@ -35,3 +35,11 @@ def read_points(
     if layer is not None:
         kwargs["layer"] = layer
     return gpd.read_file(path, **kwargs)
+
+
+def group_by_id(
+    gdf: gpd.GeoDataFrame,
+    id_col: str,
+) -> dict[Any, gpd.GeoDataFrame]:
+    """Split a GeoDataFrame into groups by the values in id_col."""
+    return {val: group.copy() for val, group in gdf.groupby(id_col)}
