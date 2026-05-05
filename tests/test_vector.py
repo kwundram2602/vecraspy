@@ -141,3 +141,9 @@ def test_build_trajectories_sort_col(tmp_path):
     result = build_trajectories(path, id_col="tid", sort_col="t")
     xs = [geom.x for geom in result[0].points.geometry]
     assert xs == [1.0, 2.0, 3.0]
+
+
+def test_public_exports():
+    import vecraspy
+    assert hasattr(vecraspy, "Trajectory")
+    assert hasattr(vecraspy, "build_trajectories")
