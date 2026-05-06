@@ -73,3 +73,71 @@ def build_trajectories(
         build_trajectory(pts, sort_col=sort_col, id=id_val)
         for id_val, pts in groups.items()
     ]
+
+
+def _safe_stem(value: Any, fallback: str) -> str:
+    name = str(value) if value is not None else fallback
+    name = name.strip()
+    if not name:
+        return fallback
+    cleaned: list[str] = []
+    for char in name:
+        if char.isascii() and (char.isalnum() or char in {"-", "_", "."}):
+            cleaned.append(char)
+        else:
+            cleaned.append("_")
+    stem = "".join(cleaned).strip("._-")
+    return stem or fallback
+
+
+def write_trajectories(
+    trajectories: list[Trajectory],
+    output_dir: Path | str,
+    *,
+    driver: str = "GPKG",
+    layer: str | None = None,
+    overwrite: bool = True,
+) -> list[Path]:
+    """Write each trajectory to its own GeoPackage.
+
+    Filenames are derived from trajectory ids, with unsafe characters replaced
+    by underscores.
+
+    Args:
+        trajectories: Trajectories to write; each becomes its own file.
+        output_dir: Directory where files are written.
+        driver: Fiona driver name; defaults to "GPKG".
+        layer: Optional layer name to write; uses the default if None.
+        overwrite: Whether to overwrite existing files.
+
+    Returns:
+        Paths to the written files.
+
+    Raises:
+        FileExistsError: If overwrite is False and a target file exists.
+        NotADirectoryError: If output_dir exists and is not a directory.
+        ValueError: If two trajectories produce the same filename.
+    """
+    out_dir = Path(output_dir)
+    if out_dir.exists() and not out_dir.is_dir():
+        raise NotADirectoryError(f"output_dir must be a directory, got {out_dir}")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    outputs: list[Path] = []
+    used: set[str] = set()
+    for index, traj in enumerate(trajectories, start=1):
+        stem = _safe_stem(traj.id, fallback=f"trajectory_{index}")
+        if stem in used:
+            raise ValueError(f"duplicate trajectory id produces filename '{stem}.gpkg'")
+        used.add(stem)
+        path = out_dir / f"{stem}.gpkg"
+        if path.exists():
+            if not overwrite:
+                raise FileExistsError(f"output file already exists: {path}")
+            path.unlink()
+        kwargs: dict[str, Any] = {"driver": driver}
+        if layer is not None:
+            kwargs["layer"] = layer
+        traj.points.to_file(path, **kwargs)
+        outputs.append(path)
+    return outputs

@@ -5,9 +5,11 @@ from pathlib import Path
 import geopandas as gpd
 import numpy as np
 import rasterio
+import whitebox_workflows as wbw
 from rasterio.crs import CRS
 from rasterio.enums import Resampling
 from rasterio.merge import merge as _rasterio_merge
+from rasterio.transform import from_bounds
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import transform_bounds
 from shapely.geometry import box
@@ -30,8 +32,7 @@ def _collect_tif_paths(source: list[Path | str] | Path | str) -> list[Path]:
         raise ValueError(f"expected a directory, got a file: {source_path}")
 
     paths = sorted(
-        p for p in source_path.iterdir()
-        if p.suffix.lower() in {".tif", ".tiff"}
+        p for p in source_path.iterdir() if p.suffix.lower() in {".tif", ".tiff"}
     )
     if not paths:
         raise ValueError(f"no TIF files found in directory: {source_path}")
@@ -40,6 +41,11 @@ def _collect_tif_paths(source: list[Path | str] | Path | str) -> list[Path]:
 
 
 _VALID_RESAMPLING_NAMES: frozenset[str] = frozenset(r.name for r in Resampling)
+_VALID_AGGREGATION_TYPES: frozenset[str] = frozenset(
+    {"mean", "sum", "maximum", "minimum", "range"}
+)
+
+_wbe = wbw.WbEnvironment()
 
 
 def merge_tifs(
@@ -87,10 +93,16 @@ def merge_tifs(
     resampling_enum = Resampling[resampling]
 
     with rasterio.open(tif_paths[0]) as ref:
-        resolved_crs = CRS.from_user_input(target_crs) if target_crs is not None else ref.crs
-        resolved_res = target_resolution if target_resolution is not None else (
-            abs(ref.transform.a),
-            abs(ref.transform.e),
+        resolved_crs = (
+            CRS.from_user_input(target_crs) if target_crs is not None else ref.crs
+        )
+        resolved_res = (
+            target_resolution
+            if target_resolution is not None
+            else (
+                abs(ref.transform.a),
+                abs(ref.transform.e),
+            )
         )
         resolved_nodata = nodata if nodata is not None else ref.nodata
 
@@ -160,6 +172,27 @@ def tif_bounds_as_polygon(path: Path | str) -> Polygon:
     return box(bounds.left, bounds.bottom, bounds.right, bounds.top)
 
 
+def ndvi(red: np.ndarray, nir: np.ndarray) -> np.ndarray:
+    """Compute the Normalised Difference Vegetation Index.
+
+    Formula: (NIR - Red) / (NIR + Red). Pixels where NIR + Red == 0 are set
+    to 0 to avoid division by zero.
+
+    Args:
+        red: 2-D float array for the red band.
+        nir: 2-D float array for the near-infrared band.
+
+    Returns:
+        2-D float32 array in [-1, 1].
+    """
+    red = red.astype(np.float32)
+    nir = nir.astype(np.float32)
+    denom = nir + red
+    with np.errstate(invalid="ignore", divide="ignore"):
+        result = np.where(denom == 0, 0.0, (nir - red) / denom)
+    return result.astype(np.float32)
+
+
 def filter_tifs_by_aoi(
     tif_paths: list[Path | str],
     aoi: BaseGeometry | gpd.GeoDataFrame | gpd.GeoSeries,
@@ -196,9 +229,211 @@ def filter_tifs_by_aoi(
     for raw_path in tif_paths:
         path = Path(raw_path)
         with rasterio.open(path) as src:
-            west, south, east, north = transform_bounds(src.crs, target_crs, *src.bounds)
+            west, south, east, north = transform_bounds(
+                src.crs, target_crs, *src.bounds
+            )
         tif_bbox = box(west, south, east, north)
         if aoi_geom.intersects(tif_bbox):
             matches.append(path)
 
     return matches
+
+
+def aggregate_raster(
+    raster: wbw.Raster,
+    aggregation_factor: int = 2,
+    aggregation_type: str = "mean",
+) -> wbw.Raster:
+    """Aggregate a raster to a coarser grid using whitebox-workflows.
+
+    Args:
+        raster: Input raster to aggregate.
+        aggregation_factor: Factor by which rows/columns are reduced.
+        aggregation_type: One of "mean", "sum", "maximum", "minimum", "range".
+
+    Returns:
+        Aggregated raster.
+
+    Raises:
+        ValueError: If aggregation_factor is < 1 or aggregation_type is invalid.
+    """
+    if aggregation_factor < 1:
+        raise ValueError(
+            f"aggregation_factor must be >= 1, got {aggregation_factor}"
+        )
+    if aggregation_type not in _VALID_AGGREGATION_TYPES:
+        raise ValueError(
+            f"invalid aggregation_type {aggregation_type!r}; "
+            f"valid values: {sorted(_VALID_AGGREGATION_TYPES)}"
+        )
+
+    return _wbe.aggregate_raster(
+        raster,
+        aggregation_factor=aggregation_factor,
+        aggregation_type=aggregation_type,
+    )
+
+
+def scale_raster_to_gsd(
+    input_path: Path | str,
+    output_path: Path | str,
+    target_gsd: float,
+    *,
+    resampling: str = "bilinear",
+) -> Path:
+    """Resample a raster to a target ground sample distance (GSD).
+
+    Args:
+        input_path: Path to the source raster.
+        output_path: Path for the resampled raster.
+        target_gsd: Desired pixel size in CRS units (e.g. meters).
+        resampling: Rasterio resampling algorithm name (e.g. "bilinear",
+            "nearest", "cubic"). Defaults to "bilinear".
+
+    Returns:
+        The resolved output_path as a Path.
+
+    Raises:
+        FileNotFoundError: If input_path does not exist.
+        ValueError: If target_gsd <= 0 or resampling is invalid.
+    """
+    if target_gsd <= 0:
+        raise ValueError(f"target_gsd must be > 0, got {target_gsd}")
+    if resampling not in _VALID_RESAMPLING_NAMES:
+        raise ValueError(
+            f"invalid resampling {resampling!r}; "
+            f"valid names: {sorted(_VALID_RESAMPLING_NAMES)}"
+        )
+
+    src_path = Path(input_path)
+    if not src_path.exists():
+        raise FileNotFoundError(f"file not found: {src_path}")
+
+    resampling_enum = Resampling[resampling]
+    out_path = Path(output_path)
+
+    with rasterio.open(src_path) as src:
+        src_gsd_x = src.transform.a
+        src_gsd_y = abs(src.transform.e)
+
+        scale_x = src_gsd_x / target_gsd
+        scale_y = src_gsd_y / target_gsd
+
+        new_width = max(1, round(src.width * scale_x))
+        new_height = max(1, round(src.height * scale_y))
+
+        new_transform = from_bounds(
+            *src.bounds,
+            width=new_width,
+            height=new_height,
+        )
+
+        profile = src.profile.copy()
+        profile.update(
+            width=new_width,
+            height=new_height,
+            transform=new_transform,
+        )
+
+        data = src.read(
+            out_shape=(src.count, new_height, new_width),
+            resampling=resampling_enum,
+        )
+
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(data)
+
+    return out_path
+
+
+def extract_raster_values_at_points(
+    rasters: list[wbw.Raster],
+    points: wbw.Vector,
+) -> tuple[wbw.Vector, str]:
+    """Extract raster values at point locations using whitebox-workflows.
+
+    Args:
+        rasters: Input rasters to sample.
+        points: Point vector to sample at.
+
+    Returns:
+        A tuple of (updated points vector, text report).
+
+    Raises:
+        ValueError: If rasters is empty.
+    """
+    if not rasters:
+        raise ValueError("rasters must contain at least one Raster")
+
+    return _wbe.extract_raster_values_at_points(rasters, points)
+
+
+def summarize_extracted_raster_values(
+    points: wbw.Vector | gpd.GeoDataFrame | tuple[wbw.Vector, str],
+    *,
+    value_fields: list[str] | None = None,
+    value_prefix: str = "VALUE",
+) -> dict[str, dict[str, float]]:
+    """Summarize sampled raster values from extract_raster_values_at_points.
+
+    Args:
+        points: A WbW Vector, GeoDataFrame, or the (Vector, report) tuple
+            returned by extract_raster_values_at_points.
+        value_fields: Optional list of field names to summarize. If None,
+            fields starting with value_prefix are used.
+        value_prefix: Field-name prefix used for extracted values.
+
+    Returns:
+        Mapping of field name to summary stats.
+
+    Raises:
+        TypeError: If points cannot be converted to a GeoDataFrame.
+        ValueError: If no value fields are found or values are non-numeric.
+    """
+    if isinstance(points, tuple):
+        points = points[0]
+
+    if isinstance(points, gpd.GeoDataFrame):
+        gdf = points
+    else:
+        converter = None
+        for name in ("to_geopandas", "to_geo_dataframe", "to_gdf"):
+            if hasattr(points, name):
+                converter = getattr(points, name)
+                break
+        if converter is None:
+            raise TypeError(
+                "points must be a GeoDataFrame or a WbW Vector with a GeoDataFrame converter"
+            )
+        gdf = converter()
+
+    if value_fields is None:
+        value_fields = [
+            col for col in gdf.columns if str(col).startswith(value_prefix)
+        ]
+    if not value_fields:
+        raise ValueError("no value fields found to summarize")
+
+    stats: dict[str, dict[str, float]] = {}
+    for field in value_fields:
+        values = gdf[field].to_numpy()
+        try:
+            numeric = np.asarray(values, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"field {field!r} contains non-numeric values") from exc
+
+        numeric = numeric[np.isfinite(numeric)]
+        if numeric.size == 0:
+            raise ValueError(f"field {field!r} has no finite values")
+
+        stats[field] = {
+            "count": float(numeric.size),
+            "min": float(np.min(numeric)),
+            "max": float(np.max(numeric)),
+            "mean": float(np.mean(numeric)),
+            "p25": float(np.percentile(numeric, 25)),
+            "median": float(np.percentile(numeric, 50)),
+            "p75": float(np.percentile(numeric, 75)),
+        }
+
+    return stats

@@ -6,7 +6,14 @@ import geopandas as gpd
 import pytest
 from shapely.geometry import Point
 
-from vecraspy.vector import Trajectory, read_points, group_by_id, build_trajectory, build_trajectories
+from vecraspy.vector import (
+    Trajectory,
+    read_points,
+    group_by_id,
+    build_trajectory,
+    build_trajectories,
+    write_trajectories,
+)
 
 
 def _write_gpkg(tmp_path: Path, rows: list[dict]) -> Path:
@@ -143,7 +150,27 @@ def test_build_trajectories_sort_col(tmp_path):
     assert xs == [1.0, 2.0, 3.0]
 
 
+def test_write_trajectories_writes_files(tmp_path):
+    path = _write_gpkg(tmp_path, [
+        {"geometry": Point(0.0, 0.0), "tid": "a", "speed": 1.2},
+        {"geometry": Point(1.0, 0.0), "tid": "b", "speed": 2.3},
+        {"geometry": Point(2.0, 0.0), "tid": "a", "speed": 3.4},
+    ])
+    trajectories = build_trajectories(path, id_col="tid")
+    output_dir = tmp_path / "out"
+    outputs = write_trajectories(trajectories, output_dir)
+
+    assert {path.name for path in outputs} == {"a.gpkg", "b.gpkg"}
+    for out_path in outputs:
+        assert out_path.exists()
+        gdf = read_points(out_path)
+        assert "tid" in gdf.columns
+        assert "speed" in gdf.columns
+        assert len(gdf) >= 1
+
+
 def test_public_exports():
     import vecraspy
     assert hasattr(vecraspy, "Trajectory")
     assert hasattr(vecraspy, "build_trajectories")
+    assert hasattr(vecraspy, "write_trajectories")

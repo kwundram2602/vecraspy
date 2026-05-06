@@ -79,7 +79,9 @@ def test_merge_tifs_from_list_stitches_horizontally(tmp_path):
     t1 = tmp_path / "tile1.tif"
     t2 = tmp_path / "tile2.tif"
     _write_tif(t1, np.ones((4, 4), dtype=np.float32), west=0, east=4, south=0, north=4)
-    _write_tif(t2, np.full((4, 4), 2.0, dtype=np.float32), west=4, east=8, south=0, north=4)
+    _write_tif(
+        t2, np.full((4, 4), 2.0, dtype=np.float32), west=4, east=8, south=0, north=4
+    )
 
     out = tmp_path / "merged.tif"
     result = merge_tifs([t1, t2], out)
@@ -95,8 +97,22 @@ def test_merge_tifs_from_list_stitches_horizontally(tmp_path):
 def test_merge_tifs_from_directory(tmp_path):
     tiles = tmp_path / "tiles"
     tiles.mkdir()
-    _write_tif(tiles / "a.tif", np.ones((4, 4), dtype=np.float32), west=0, east=4, south=0, north=4)
-    _write_tif(tiles / "b.tif", np.ones((4, 4), dtype=np.float32), west=4, east=8, south=0, north=4)
+    _write_tif(
+        tiles / "a.tif",
+        np.ones((4, 4), dtype=np.float32),
+        west=0,
+        east=4,
+        south=0,
+        north=4,
+    )
+    _write_tif(
+        tiles / "b.tif",
+        np.ones((4, 4), dtype=np.float32),
+        west=4,
+        east=8,
+        south=0,
+        north=4,
+    )
 
     out = tmp_path / "merged.tif"
     result = merge_tifs(tiles, out)
@@ -121,7 +137,15 @@ def test_merge_tifs_preserves_nodata_from_first_tif(tmp_path):
     data = np.ones((4, 4), dtype=np.float32)
     data[0, 0] = -9999.0
     _write_tif(t1, data, west=0, east=4, south=0, north=4, nodata=-9999.0)
-    _write_tif(t2, np.ones((4, 4), dtype=np.float32), west=4, east=8, south=0, north=4, nodata=-9999.0)
+    _write_tif(
+        t2,
+        np.ones((4, 4), dtype=np.float32),
+        west=4,
+        east=8,
+        south=0,
+        north=4,
+        nodata=-9999.0,
+    )
 
     out = tmp_path / "merged.tif"
     merge_tifs([t1, t2], out)
@@ -166,8 +190,24 @@ def test_merge_tifs_empty_directory_raises(tmp_path):
 def test_merge_tifs_reprojects_to_target_crs(tmp_path):
     t1 = tmp_path / "utm.tif"
     t2 = tmp_path / "wgs84.tif"
-    _write_tif(t1, np.ones((4, 4), dtype=np.float32), crs="EPSG:32632", west=500000, east=500004, south=5400000, north=5400004)
-    _write_tif(t2, np.ones((4, 4), dtype=np.float32), crs="EPSG:4326", west=9.0, east=9.001, south=48.7, north=48.701)
+    _write_tif(
+        t1,
+        np.ones((4, 4), dtype=np.float32),
+        crs="EPSG:32632",
+        west=500000,
+        east=500004,
+        south=5400000,
+        north=5400004,
+    )
+    _write_tif(
+        t2,
+        np.ones((4, 4), dtype=np.float32),
+        crs="EPSG:4326",
+        west=9.0,
+        east=9.001,
+        south=48.7,
+        north=48.701,
+    )
 
     out = tmp_path / "merged.tif"
     merge_tifs([t1, t2], out, target_crs="EPSG:32632")
