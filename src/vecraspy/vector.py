@@ -88,6 +88,44 @@ def get_bounds_as_gdf(
     bounds_gdf = gpd.GeoDataFrame(geometry=[box(*bounds)], crs=gdf.crs)
     return bounds_gdf
 
+def enlarge_aoi(
+    aoi: Path | str | gpd.GeoDataFrame,
+    factor: float,
+) -> gpd.GeoDataFrame:
+    """Enlarge an AOI rectangle by a uniform scale factor around its centre.
+
+    The bounding box of the input is scaled by ``factor`` in both directions
+    while keeping the centre fixed. A factor of 1.5 makes each side 1.5×
+    longer; 1.0 returns the original bounding box unchanged.
+
+    Args:
+        aoi: Source AOI as a GeoDataFrame or a path to any OGR-readable file.
+            The geometry is assumed to be a rectangle (or near-rectangle);
+            only the bounding box is used.
+        factor: Multiplicative scale factor applied to each side. Must be > 0.
+
+    Returns:
+        Single-row GeoDataFrame containing the enlarged rectangle, in the
+        same CRS as the input.
+
+    Raises:
+        ValueError: If factor is <= 0.
+    """
+    if factor <= 0:
+        raise ValueError(f"factor must be > 0, got {factor!r}")
+
+    gdf = gpd.read_file(aoi) if isinstance(aoi, (Path, str)) else aoi
+
+    minx, miny, maxx, maxy = gdf.total_bounds
+    cx = (minx + maxx) / 2
+    cy = (miny + maxy) / 2
+    half_w = (maxx - minx) / 2 * factor
+    half_h = (maxy - miny) / 2 * factor
+
+    enlarged = box(cx - half_w, cy - half_h, cx + half_w, cy + half_h)
+    return gpd.GeoDataFrame(geometry=[enlarged], crs=gdf.crs)
+
+
 def compute_aoi(
     gdf: gpd.GeoDataFrame,
     coverage: float,
