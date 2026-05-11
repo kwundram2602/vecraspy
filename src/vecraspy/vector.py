@@ -12,6 +12,7 @@ import numpy as np
 from shapely import concave_hull
 from shapely.geometry import MultiPoint
 from shapely.geometry.base import BaseGeometry
+from shapely.geometry import box
 
 
 @dataclass
@@ -79,6 +80,13 @@ def build_trajectories(
         for id_val, pts in groups.items()
     ]
 
+def get_bounds_as_gdf(
+    gdf: gpd.GeoDataFrame,
+) -> gpd.GeoDataFrame:
+    """Return a GeoDataFrame with a single row containing the bounding box of gdf."""
+    bounds = gdf.total_bounds  # (minx, miny, maxx, maxy)
+    bounds_gdf = gpd.GeoDataFrame(geometry=[box(*bounds)], crs=gdf.crs)
+    return bounds_gdf
 
 def compute_aoi(
     gdf: gpd.GeoDataFrame,
