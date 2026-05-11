@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import geopandas as gpd
+import numpy as np
+from shapely import concave_hull
+from shapely.geometry import MultiPoint
+from shapely.geometry.base import BaseGeometry
 
 
 @dataclass
@@ -73,6 +78,53 @@ def build_trajectories(
         build_trajectory(pts, sort_col=sort_col, id=id_val)
         for id_val, pts in groups.items()
     ]
+
+
+def compute_aoi(
+    gdf: gpd.GeoDataFrame,
+    coverage: float,
+    *,
+    method: Literal["convex", "concave"] = "convex",
+    concave_ratio: float = 0.0,
+) -> BaseGeometry:
+    """Return a polygon enclosing `coverage` fraction of the points.
+
+    Sorts points by distance from the centroid, retains the closest
+    ``coverage`` fraction, then builds the polygon using the chosen method.
+
+    Args:
+        gdf: GeoDataFrame of point geometries.
+        coverage: Fraction of points to include, in (0, 1].
+            E.g. 0.95 keeps the 95 % of points closest to the centroid.
+        method: Hull algorithm. ``"convex"`` returns the Minimum Convex
+            Polygon (MCP). ``"concave"`` follows the point cloud more
+            tightly and is better for elongated or irregular distributions.
+        concave_ratio: Only used when ``method="concave"``. Controls how
+            closely the hull follows the points: 0.0 (default) = tightest
+            fit, 1.0 = convex hull. Passed to ``shapely.concave_hull``.
+
+    Returns:
+        Hull geometry enclosing the retained points (typically a Polygon).
+
+    Raises:
+        ValueError: If coverage is not in (0, 1].
+        ValueError: If gdf contains fewer than 3 points.
+    """
+    if not 0 < coverage <= 1:
+        raise ValueError(f"coverage must be in (0, 1], got {coverage!r}")
+    if len(gdf) < 3:
+        raise ValueError(f"at least 3 points required, got {len(gdf)}")
+
+    coords = np.column_stack([gdf.geometry.x, gdf.geometry.y])
+    centroid = coords.mean(axis=0)
+    distances = np.linalg.norm(coords - centroid, axis=1)
+
+    n_keep = math.ceil(len(gdf) * coverage)
+    retained = MultiPoint(coords[np.argsort(distances)[:n_keep]])
+
+    if method == "concave":
+        return concave_hull(retained, ratio=concave_ratio)
+    return retained.convex_hull
 
 
 def _safe_stem(value: Any, fallback: str) -> str:

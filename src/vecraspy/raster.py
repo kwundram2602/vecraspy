@@ -8,6 +8,7 @@ import rasterio
 import whitebox_workflows as wbw
 from rasterio.crs import CRS
 from rasterio.enums import Resampling
+from rasterio.mask import mask as _rasterio_mask
 from rasterio.merge import merge as _rasterio_merge
 from rasterio.transform import from_bounds
 from rasterio.vrt import WarpedVRT
@@ -342,6 +343,80 @@ def scale_raster_to_gsd(
 
     with rasterio.open(out_path, "w", **profile) as dst:
         dst.write(data)
+
+    return out_path
+
+
+def clip_tif_by_aoi(
+    input_path: Path | str,
+    output_path: Path | str,
+    aoi: BaseGeometry | gpd.GeoDataFrame | gpd.GeoSeries,
+    *,
+    aoi_crs: str = "EPSG:4326",
+    nodata: float | None = None,
+    crop: bool = True,
+) -> Path:
+    """Clip a GeoTIFF to an AOI and write the result to disk.
+
+    The AOI is reprojected to the raster's CRS on-the-fly — no intermediate
+    files are written. For GeoDataFrame and GeoSeries inputs the embedded CRS
+    is used; for plain Shapely geometries ``aoi_crs`` applies.
+
+    Args:
+        input_path: Path to the source GeoTIFF.
+        output_path: Path for the clipped output GeoTIFF.
+        aoi: Area of interest as a Shapely geometry, GeoDataFrame, or
+            GeoSeries. Multi-geometry inputs are dissolved to a single
+            geometry via union_all().
+        aoi_crs: CRS for plain Shapely geometry inputs (ignored when aoi
+            is a GeoDataFrame or GeoSeries). Defaults to WGS-84.
+        nodata: Nodata value for masked pixels. Falls back to the source
+            raster's nodata, then 0 if neither is set.
+        crop: If True (default), the output extent is cropped to the AOI
+            bounding box. If False, the full raster extent is kept and only
+            pixels outside the AOI are masked.
+
+    Returns:
+        The resolved output_path as a Path.
+
+    Raises:
+        FileNotFoundError: If input_path does not exist.
+    """
+    src_path = Path(input_path)
+    if not src_path.exists():
+        raise FileNotFoundError(f"file not found: {src_path}")
+
+    if isinstance(aoi, gpd.GeoDataFrame):
+        aoi_series = aoi.geometry
+    elif isinstance(aoi, gpd.GeoSeries):
+        aoi_series = aoi
+    else:
+        aoi_series = gpd.GeoSeries([aoi], crs=aoi_crs)
+
+    with rasterio.open(src_path) as src:
+        aoi_reprojected = aoi_series.to_crs(src.crs)
+        aoi_geom = aoi_reprojected.union_all()
+
+        resolved_nodata = nodata if nodata is not None else (src.nodata or 0)
+
+        clipped, clipped_transform = _rasterio_mask(
+            src,
+            shapes=[aoi_geom],
+            crop=crop,
+            nodata=resolved_nodata,
+        )
+
+        profile = src.profile.copy()
+        profile.update(
+            height=clipped.shape[1],
+            width=clipped.shape[2],
+            transform=clipped_transform,
+            nodata=resolved_nodata,
+        )
+
+    out_path = Path(output_path)
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(clipped)
 
     return out_path
 

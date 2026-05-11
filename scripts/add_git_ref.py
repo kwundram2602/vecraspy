@@ -38,6 +38,11 @@ def main() -> int:
         default=None,
         help="Commit hash, branch, or tag to pin (e.g. main, v1.2.3, abc1234)",
     )
+    parser.add_argument(
+        "--frozen",
+        action="store_true",
+        help="Skip re-locking the target project (useful when its deps can't resolve)",
+    )
     args = parser.parse_args()
 
     target = Path(args.target).resolve()
@@ -49,11 +54,12 @@ def main() -> int:
     ref = f"@{args.rev}" if args.rev else ""
     spec = f"git+{url}{ref}"
 
+    cmd = ["uv", "--project", str(target), "add", spec]
+    if args.frozen:
+        cmd.append("--frozen")
+
     print(f"Adding {spec} to {target.name}...")
-    subprocess.run(
-        ["uv", "--project", str(target), "add", spec],
-        check=True,
-    )
+    subprocess.run(cmd, check=True)
     print("Done.")
     return 0
 
