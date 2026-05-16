@@ -503,6 +503,71 @@ def align_raster_grid(
     return out_path
 
 
+def same_nodata_mask(
+    reference_path: Path | str,
+    target_path: Path | str,
+    output_path: Path | str,
+    *,
+    nodata: float | None = None,
+) -> Path:
+    """Apply the nodata mask of a reference raster to a target raster.
+
+    Every pixel that is nodata in any band of the reference is set to the
+    nodata value in the output. All other pixels are copied from the target
+    unchanged. Both rasters must share the same grid (height, width).
+
+    Args:
+        reference_path: Path to the reference GeoTIFF whose nodata mask is used.
+        target_path: Path to the GeoTIFF to apply the mask to.
+        output_path: Path for the masked output GeoTIFF.
+        nodata: Nodata value written to masked pixels. Falls back to the target
+            raster's nodata when None. Raises if neither is set.
+
+    Returns:
+        The resolved output_path as a Path.
+
+    Raises:
+        FileNotFoundError: If reference_path or target_path does not exist.
+        ValueError: If the rasters have different shapes, or if no nodata value
+            can be determined.
+    """
+    ref_path = Path(reference_path)
+    src_path = Path(target_path)
+
+    if not ref_path.exists():
+        raise FileNotFoundError(f"file not found: {ref_path}")
+    if not src_path.exists():
+        raise FileNotFoundError(f"file not found: {src_path}")
+
+    with rasterio.open(ref_path) as ref:
+        # read_masks returns 0 where nodata, 255 where valid
+        ref_nodata_mask = np.any(ref.read_masks() == 0, axis=0)
+
+    with rasterio.open(src_path) as src:
+        resolved_nodata = nodata if nodata is not None else src.nodata
+        if resolved_nodata is None:
+            raise ValueError(
+                "no nodata value available; set one on the target raster or pass nodata="
+            )
+        if (src.height, src.width) != ref_nodata_mask.shape:
+            raise ValueError(
+                f"raster shapes do not match: reference is {ref_nodata_mask.shape}, "
+                f"target is ({src.height}, {src.width})"
+            )
+
+        data = src.read()
+        data[:, ref_nodata_mask] = resolved_nodata
+
+        profile = src.profile.copy()
+        profile.update(nodata=resolved_nodata)
+
+    out_path = Path(output_path)
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(data)
+
+    return out_path
+
+
 def extract_raster_values_at_points(
     rasters: list[wbw.Raster],
     points: wbw.Vector,
