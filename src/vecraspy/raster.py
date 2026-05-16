@@ -12,7 +12,7 @@ from rasterio.mask import mask as _rasterio_mask
 from rasterio.merge import merge as _rasterio_merge
 from rasterio.transform import from_bounds
 from rasterio.vrt import WarpedVRT
-from rasterio.warp import transform_bounds
+from rasterio.warp import reproject, transform_bounds
 from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.polygon import Polygon
@@ -417,6 +417,88 @@ def clip_tif_by_aoi(
     out_path = Path(output_path)
     with rasterio.open(out_path, "w", **profile) as dst:
         dst.write(clipped)
+
+    return out_path
+
+
+def align_raster_grid(
+    reference_path: Path | str,
+    target_path: Path | str,
+    output_path: Path | str,
+    *,
+    resampling: str = "bilinear",
+) -> Path:
+    """Align a raster to the grid of a reference raster.
+
+    Reprojects, resamples, and clips the target raster to exactly match
+    the CRS, pixel size, and spatial extent of the reference raster.
+    Steps that are already identical are skipped implicitly by rasterio.
+
+    Args:
+        reference_path: Path to the reference GeoTIFF defining the target grid.
+        target_path: Path to the GeoTIFF to align.
+        output_path: Path for the aligned output GeoTIFF.
+        resampling: Rasterio resampling algorithm name (e.g. "bilinear",
+            "nearest", "cubic"). Defaults to "bilinear".
+
+    Returns:
+        The resolved output_path as a Path.
+
+    Raises:
+        FileNotFoundError: If reference_path or target_path does not exist.
+        ValueError: If resampling is not a valid rasterio resampling algorithm.
+    """
+    if resampling not in _VALID_RESAMPLING_NAMES:
+        raise ValueError(
+            f"invalid resampling {resampling!r}; "
+            f"valid names: {sorted(_VALID_RESAMPLING_NAMES)}"
+        )
+
+    ref_path = Path(reference_path)
+    src_path = Path(target_path)
+
+    if not ref_path.exists():
+        raise FileNotFoundError(f"file not found: {ref_path}")
+    if not src_path.exists():
+        raise FileNotFoundError(f"file not found: {src_path}")
+
+    resampling_enum = Resampling[resampling]
+    out_path = Path(output_path)
+
+    with rasterio.open(ref_path) as ref:
+        ref_crs = ref.crs
+        ref_transform = ref.transform
+        ref_width = ref.width
+        ref_height = ref.height
+
+    with rasterio.open(src_path) as src:
+        destination = np.zeros(
+            (src.count, ref_height, ref_width), dtype=src.dtypes[0]
+        )
+
+        for band_idx in src.indexes:
+            reproject(
+                source=rasterio.band(src, band_idx),
+                destination=destination[band_idx - 1],
+                src_transform=src.transform,
+                src_crs=src.crs,
+                dst_transform=ref_transform,
+                dst_crs=ref_crs,
+                resampling=resampling_enum,
+                src_nodata=src.nodata,
+                dst_nodata=src.nodata,
+            )
+
+        profile = src.profile.copy()
+        profile.update(
+            crs=ref_crs,
+            transform=ref_transform,
+            width=ref_width,
+            height=ref_height,
+        )
+
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(destination)
 
     return out_path
 
