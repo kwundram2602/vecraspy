@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -124,6 +125,43 @@ def enlarge_aoi(
 
     enlarged = box(cx - half_w, cy - half_h, cx + half_w, cy + half_h)
     return gpd.GeoDataFrame(geometry=[enlarged], crs=gdf.crs)
+
+
+def filter_by_aoi(
+    gdf: gpd.GeoDataFrame,
+    aoi: gpd.GeoDataFrame,
+    *,
+    predicate: Literal["intersects", "within"] = "intersects",
+) -> gpd.GeoDataFrame:
+    """Filter a GeoDataFrame to features that spatially relate to an AOI.
+
+    Args:
+        gdf: GeoDataFrame to filter.
+        aoi: Area of interest. Multiple rows are unioned into a single geometry.
+        predicate: Spatial relationship to test. ``"intersects"`` keeps features
+            that share any area or boundary with the AOI. ``"within"`` keeps only
+            features that lie fully inside it.
+
+    Returns:
+        Subset of gdf whose geometries satisfy *predicate* against the AOI.
+        The original index is preserved.
+    """
+    if aoi.crs != gdf.crs:
+        warnings.warn(
+            f"AOI CRS ({aoi.crs}) differs from GeoDataFrame CRS ({gdf.crs}). "
+            "Reprojecting AOI to match.",
+            stacklevel=2,
+        )
+        aoi = aoi.to_crs(gdf.crs)
+
+    aoi_geom = aoi.geometry.union_all()
+
+    if predicate == "intersects":
+        mask = gdf.geometry.intersects(aoi_geom)
+    else:
+        mask = gdf.geometry.within(aoi_geom)
+
+    return gdf[mask]
 
 
 def compute_aoi(
