@@ -277,3 +277,14 @@ def write_trajectories(
         traj.points.to_file(path, **kwargs)
         outputs.append(path)
     return outputs
+
+def get_stac_spatial_extent(aoi: gpd.GeoDataFrame) -> list:
+    
+    if aoi.crs is None:
+        raise ValueError("AOI has no CRS defined; cannot compute spatial extent in EPSG:4326.")
+
+    if aoi.crs.to_epsg() != 4326:
+        aoi = aoi.to_crs(epsg=4326)
+
+    west, south, east, north = aoi.total_bounds
+    return [west, south, east, north]
