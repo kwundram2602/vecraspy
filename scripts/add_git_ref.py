@@ -14,9 +14,7 @@ def _remote_url() -> str:
         cwd=Path(__file__).resolve().parents[1],
     )
     if result.returncode != 0:
-        raise RuntimeError(
-            "Could not detect git remote URL. Pass --url explicitly."
-        )
+        raise RuntimeError("Could not detect git remote URL. Pass --url explicitly.")
     return result.stdout.strip()
 
 

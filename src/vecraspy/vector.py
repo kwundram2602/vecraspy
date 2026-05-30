@@ -81,6 +81,7 @@ def build_trajectories(
         for id_val, pts in groups.items()
     ]
 
+
 def get_bounds_as_gdf(
     gdf: gpd.GeoDataFrame,
 ) -> gpd.GeoDataFrame:
@@ -88,6 +89,7 @@ def get_bounds_as_gdf(
     bounds = gdf.total_bounds  # (minx, miny, maxx, maxy)
     bounds_gdf = gpd.GeoDataFrame(geometry=[box(*bounds)], crs=gdf.crs)
     return bounds_gdf
+
 
 def enlarge_aoi(
     aoi: Path | str | gpd.GeoDataFrame,
@@ -278,10 +280,13 @@ def write_trajectories(
         outputs.append(path)
     return outputs
 
+
 def get_stac_spatial_extent(aoi: gpd.GeoDataFrame) -> list:
-    
+
     if aoi.crs is None:
-        raise ValueError("AOI has no CRS defined; cannot compute spatial extent in EPSG:4326.")
+        raise ValueError(
+            "AOI has no CRS defined; cannot compute spatial extent in EPSG:4326."
+        )
 
     if aoi.crs.to_epsg() != 4326:
         aoi = aoi.to_crs(epsg=4326)

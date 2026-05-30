@@ -259,9 +259,7 @@ def aggregate_raster(
         ValueError: If aggregation_factor is < 1 or aggregation_type is invalid.
     """
     if aggregation_factor < 1:
-        raise ValueError(
-            f"aggregation_factor must be >= 1, got {aggregation_factor}"
-        )
+        raise ValueError(f"aggregation_factor must be >= 1, got {aggregation_factor}")
     if aggregation_type not in _VALID_AGGREGATION_TYPES:
         raise ValueError(
             f"invalid aggregation_type {aggregation_type!r}; "
@@ -472,9 +470,7 @@ def align_raster_grid(
         ref_height = ref.height
 
     with rasterio.open(src_path) as src:
-        destination = np.zeros(
-            (src.count, ref_height, ref_width), dtype=src.dtypes[0]
-        )
+        destination = np.zeros((src.count, ref_height, ref_width), dtype=src.dtypes[0])
 
         for band_idx in src.indexes:
             reproject(
@@ -630,9 +626,7 @@ def summarize_extracted_raster_values(
         gdf = converter()
 
     if value_fields is None:
-        value_fields = [
-            col for col in gdf.columns if str(col).startswith(value_prefix)
-        ]
+        value_fields = [col for col in gdf.columns if str(col).startswith(value_prefix)]
     if not value_fields:
         raise ValueError("no value fields found to summarize")
 

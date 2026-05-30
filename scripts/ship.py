@@ -76,7 +76,15 @@ def main() -> int:
     print(f"Installing into {target.name}...")
     env = {k: v for k, v in os.environ.items() if k != "VIRTUAL_ENV"}
     subprocess.run(
-        ["uv", "--directory", str(target), "pip", "install", "--force-reinstall", str(dest)],
+        [
+            "uv",
+            "--directory",
+            str(target),
+            "pip",
+            "install",
+            "--force-reinstall",
+            str(dest),
+        ],
         check=True,
         env=env,
     )

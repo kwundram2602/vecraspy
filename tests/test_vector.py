@@ -25,10 +25,13 @@ def _write_gpkg(tmp_path: Path, rows: list[dict]) -> Path:
 
 
 def test_read_points_returns_geodataframe(tmp_path):
-    path = _write_gpkg(tmp_path, [
-        {"geometry": Point(1.0, 2.0)},
-        {"geometry": Point(3.0, 4.0)},
-    ])
+    path = _write_gpkg(
+        tmp_path,
+        [
+            {"geometry": Point(1.0, 2.0)},
+            {"geometry": Point(3.0, 4.0)},
+        ],
+    )
     gdf = read_points(path)
     assert isinstance(gdf, gpd.GeoDataFrame)
     assert len(gdf) == 2
@@ -52,6 +55,7 @@ def test_trajectory_dataclass():
 
 def test_trajectory_rejects_non_geodataframe():
     import pandas as pd
+
     with pytest.raises(TypeError, match="GeoDataFrame"):
         Trajectory(id="x", points=pd.DataFrame({"a": [1]}))
 
@@ -69,11 +73,14 @@ def test_read_points_layer_kwarg(tmp_path):
 
 
 def test_group_by_id_splits_into_correct_groups(tmp_path):
-    path = _write_gpkg(tmp_path, [
-        {"geometry": Point(1.0, 1.0), "track_id": "a"},
-        {"geometry": Point(2.0, 2.0), "track_id": "b"},
-        {"geometry": Point(3.0, 3.0), "track_id": "a"},
-    ])
+    path = _write_gpkg(
+        tmp_path,
+        [
+            {"geometry": Point(1.0, 1.0), "track_id": "a"},
+            {"geometry": Point(2.0, 2.0), "track_id": "b"},
+            {"geometry": Point(3.0, 3.0), "track_id": "a"},
+        ],
+    )
     gdf = read_points(path)
     groups = group_by_id(gdf, "track_id")
     assert set(groups.keys()) == {"a", "b"}
@@ -82,10 +89,13 @@ def test_group_by_id_splits_into_correct_groups(tmp_path):
 
 
 def test_group_by_id_returns_geodataframes(tmp_path):
-    path = _write_gpkg(tmp_path, [
-        {"geometry": Point(0.0, 0.0), "id": 1},
-        {"geometry": Point(1.0, 1.0), "id": 2},
-    ])
+    path = _write_gpkg(
+        tmp_path,
+        [
+            {"geometry": Point(0.0, 0.0), "id": 1},
+            {"geometry": Point(1.0, 1.0), "id": 2},
+        ],
+    )
     gdf = read_points(path)
     groups = group_by_id(gdf, "id")
     for val in groups.values():
@@ -117,10 +127,13 @@ def test_build_trajectory_sorts_by_sort_col():
 
 
 def test_build_trajectories_no_id_col(tmp_path):
-    path = _write_gpkg(tmp_path, [
-        {"geometry": Point(0.0, 0.0)},
-        {"geometry": Point(1.0, 1.0)},
-    ])
+    path = _write_gpkg(
+        tmp_path,
+        [
+            {"geometry": Point(0.0, 0.0)},
+            {"geometry": Point(1.0, 1.0)},
+        ],
+    )
     result = build_trajectories(path)
     assert len(result) == 1
     assert result[0].id is None
@@ -128,11 +141,14 @@ def test_build_trajectories_no_id_col(tmp_path):
 
 
 def test_build_trajectories_with_id_col(tmp_path):
-    path = _write_gpkg(tmp_path, [
-        {"geometry": Point(0.0, 0.0), "tid": "a"},
-        {"geometry": Point(1.0, 0.0), "tid": "b"},
-        {"geometry": Point(2.0, 0.0), "tid": "a"},
-    ])
+    path = _write_gpkg(
+        tmp_path,
+        [
+            {"geometry": Point(0.0, 0.0), "tid": "a"},
+            {"geometry": Point(1.0, 0.0), "tid": "b"},
+            {"geometry": Point(2.0, 0.0), "tid": "a"},
+        ],
+    )
     result = build_trajectories(path, id_col="tid")
     assert len(result) == 2
     ids = {t.id for t in result}
@@ -140,22 +156,28 @@ def test_build_trajectories_with_id_col(tmp_path):
 
 
 def test_build_trajectories_sort_col(tmp_path):
-    path = _write_gpkg(tmp_path, [
-        {"geometry": Point(3.0, 0.0), "tid": "a", "t": 3},
-        {"geometry": Point(1.0, 0.0), "tid": "a", "t": 1},
-        {"geometry": Point(2.0, 0.0), "tid": "a", "t": 2},
-    ])
+    path = _write_gpkg(
+        tmp_path,
+        [
+            {"geometry": Point(3.0, 0.0), "tid": "a", "t": 3},
+            {"geometry": Point(1.0, 0.0), "tid": "a", "t": 1},
+            {"geometry": Point(2.0, 0.0), "tid": "a", "t": 2},
+        ],
+    )
     result = build_trajectories(path, id_col="tid", sort_col="t")
     xs = [geom.x for geom in result[0].points.geometry]
     assert xs == [1.0, 2.0, 3.0]
 
 
 def test_write_trajectories_writes_files(tmp_path):
-    path = _write_gpkg(tmp_path, [
-        {"geometry": Point(0.0, 0.0), "tid": "a", "speed": 1.2},
-        {"geometry": Point(1.0, 0.0), "tid": "b", "speed": 2.3},
-        {"geometry": Point(2.0, 0.0), "tid": "a", "speed": 3.4},
-    ])
+    path = _write_gpkg(
+        tmp_path,
+        [
+            {"geometry": Point(0.0, 0.0), "tid": "a", "speed": 1.2},
+            {"geometry": Point(1.0, 0.0), "tid": "b", "speed": 2.3},
+            {"geometry": Point(2.0, 0.0), "tid": "a", "speed": 3.4},
+        ],
+    )
     trajectories = build_trajectories(path, id_col="tid")
     output_dir = tmp_path / "out"
     outputs = write_trajectories(trajectories, output_dir)
@@ -171,6 +193,7 @@ def test_write_trajectories_writes_files(tmp_path):
 
 def test_public_exports():
     import vecraspy
+
     assert hasattr(vecraspy, "Trajectory")
     assert hasattr(vecraspy, "build_trajectories")
     assert hasattr(vecraspy, "write_trajectories")
