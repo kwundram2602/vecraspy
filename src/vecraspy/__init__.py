@@ -1,29 +1,75 @@
 """vecraspy — raster and vector utility functions."""
 
+from vecraspy.plot import (
+    plot_aspect,
+    plot_dsm,
+    plot_hillshade,
+    plot_slope,
+)
 from vecraspy.raster import (
     aggregate_raster,
+    align_raster_grid,
+    clip_tif_by_aoi,
     extract_raster_values_at_points,
     filter_tifs_by_aoi,
     merge_tifs,
     ndvi,
+    reproject_raster,
+    same_nodata_mask,
     scale_raster_to_gsd,
     summarize_extracted_raster_values,
     tif_bounds_as_polygon,
 )
-from vecraspy.terrain import hillshade
-from vecraspy.vector import Trajectory, build_trajectories, write_trajectories
+from vecraspy.terrain import (
+    aspect,
+    hillshade,
+    hillshade_path,
+    slope,
+)
+from vecraspy.vector import (
+    Trajectory,
+    build_trajectories,
+    build_trajectory,
+    compute_aoi,
+    enlarge_aoi,
+    filter_by_aoi,
+    get_bounds_as_gdf,
+    get_stac_spatial_extent,
+    group_by_id,
+    read_points,
+    write_trajectories,
+)
 
 __all__ = [
-    "build_trajectories",
+    "Trajectory",
     "aggregate_raster",
+    "align_raster_grid",
+    "aspect",
+    "build_trajectories",
+    "build_trajectory",
+    "clip_tif_by_aoi",
+    "compute_aoi",
+    "enlarge_aoi",
     "extract_raster_values_at_points",
+    "filter_by_aoi",
     "filter_tifs_by_aoi",
+    "get_bounds_as_gdf",
+    "get_stac_spatial_extent",
+    "group_by_id",
     "hillshade",
+    "hillshade_path",
     "merge_tifs",
     "ndvi",
+    "plot_aspect",
+    "plot_dsm",
+    "plot_hillshade",
+    "plot_slope",
+    "read_points",
+    "reproject_raster",
+    "same_nodata_mask",
     "scale_raster_to_gsd",
+    "slope",
     "summarize_extracted_raster_values",
     "tif_bounds_as_polygon",
-    "Trajectory",
     "write_trajectories",
 ]
