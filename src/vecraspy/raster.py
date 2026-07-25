@@ -12,7 +12,7 @@ from rasterio.mask import mask as _rasterio_mask
 from rasterio.merge import merge as _rasterio_merge
 from rasterio.transform import from_bounds
 from rasterio.vrt import WarpedVRT
-from rasterio.warp import reproject, transform_bounds
+from rasterio.warp import calculate_default_transform, reproject, transform_bounds
 from shapely.geometry import box
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.polygon import Polygon
@@ -495,6 +495,113 @@ def align_raster_grid(
 
     with rasterio.open(out_path, "w", **profile) as dst:
         dst.write(destination)
+
+    return out_path
+
+
+def reproject_raster(
+    input_path: Path | str,
+    output_path: Path | str,
+    dst_crs: str | CRS,
+    *,
+    resampling: str = "bilinear",
+    resolution: float | tuple[float, float] | None = None,
+    nodata: float | None = None,
+) -> Path:
+    """Reproject a raster to a target CRS.
+
+    The output grid is derived with rasterio's ``calculate_default_transform``,
+    which preserves the source's approximate ground resolution unless
+    ``resolution`` is given. All bands are warped, and the source profile
+    (dtype, band count, compression, tiling) is carried over.
+
+    Args:
+        input_path: Path to the source GeoTIFF.
+        output_path: Path for the reprojected output GeoTIFF.
+        dst_crs: Target CRS as an EPSG string (e.g. "EPSG:25832"), WKT, or a
+            rasterio CRS object.
+        resampling: Rasterio resampling algorithm name. Defaults to "bilinear",
+            which suits continuous data; use "nearest" for categorical rasters
+            such as land cover.
+        resolution: Target pixel size in destination CRS units — a single
+            value for square pixels or an (x_res, y_res) tuple. Defaults to
+            the resolution computed by rasterio when None.
+        nodata: Nodata value for the output, used to fill areas outside the
+            reprojected source footprint. Falls back to the source raster's
+            nodata when None.
+
+    Returns:
+        The resolved output_path as a Path.
+
+    Raises:
+        FileNotFoundError: If input_path does not exist.
+        ValueError: If resampling is not a valid rasterio resampling algorithm,
+            if resolution is not > 0, or if dst_crs cannot be parsed.
+        rasterio.errors.CRSError: If the source raster has no CRS.
+    """
+    if resampling not in _VALID_RESAMPLING_NAMES:
+        raise ValueError(
+            f"invalid resampling {resampling!r}; "
+            f"valid names: {sorted(_VALID_RESAMPLING_NAMES)}"
+        )
+    if resolution is not None:
+        res_values = (
+            (resolution,) if isinstance(resolution, int | float) else tuple(resolution)
+        )
+        if any(value <= 0 for value in res_values):
+            raise ValueError(f"resolution must be > 0, got {resolution}")
+
+    src_path = Path(input_path)
+    if not src_path.exists():
+        raise FileNotFoundError(f"file not found: {src_path}")
+
+    target_crs = CRS.from_user_input(dst_crs)
+    resampling_enum = Resampling[resampling]
+    out_path = Path(output_path)
+
+    with rasterio.open(src_path) as src:
+        if src.crs is None:
+            raise rasterio.errors.CRSError(
+                f"source raster has no CRS, cannot reproject: {src_path}"
+            )
+
+        transform, width, height = calculate_default_transform(
+            src.crs,
+            target_crs,
+            src.width,
+            src.height,
+            *src.bounds,
+            resolution=resolution,
+        )
+
+        resolved_nodata = nodata if nodata is not None else src.nodata
+
+        profile = src.profile.copy()
+        profile.update(
+            crs=target_crs,
+            transform=transform,
+            width=width,
+            height=height,
+            nodata=resolved_nodata,
+        )
+        # block sizes of the source grid need not fit the new one; let GDAL pick
+        if not profile.get("tiled", False):
+            profile.pop("blockxsize", None)
+            profile.pop("blockysize", None)
+
+        with rasterio.open(out_path, "w", **profile) as dst:
+            for band_idx in src.indexes:
+                reproject(
+                    source=rasterio.band(src, band_idx),
+                    destination=rasterio.band(dst, band_idx),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    src_nodata=src.nodata,
+                    dst_transform=transform,
+                    dst_crs=target_crs,
+                    dst_nodata=resolved_nodata,
+                    resampling=resampling_enum,
+                )
 
     return out_path
 
