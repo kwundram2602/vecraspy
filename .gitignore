@@ -11,3 +11,4 @@ wheels/
 notes/
 .claude/
 .worktrees/
+.claudeignore
