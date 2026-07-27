@@ -1,6 +1,5 @@
 """Tests for vecraspy.sr."""
 
-import math
 import tempfile
 from pathlib import Path
 
@@ -9,6 +8,14 @@ import pytest
 import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
+
+from vecraspy.raster import align_raster_grid
+from vecraspy.sr import (
+    _box_filter,
+    guided_upsample_dem,
+    simulate_thermal_erosion,
+    super_resolve_dtm,
+)
 
 
 def _write_tif(
@@ -67,9 +74,6 @@ def _write_multiband_tif(
         dst.write(data)
 
 
-from vecraspy.sr import _box_filter
-
-
 def test_box_filter_constant_array_unchanged():
     arr = np.full((10, 10), 5.0)
     result = _box_filter(arr, radius=2)
@@ -90,10 +94,6 @@ def test_box_filter_matches_naive_reference():
             expected[i, j] = padded[i : i + window, j : j + window].mean()
 
     np.testing.assert_allclose(result, expected, rtol=1e-10)
-
-
-from vecraspy.sr import guided_upsample_dem
-from vecraspy.raster import align_raster_grid
 
 
 def test_guided_upsample_dem_output_matches_optical_grid(tmp_path):
@@ -126,7 +126,12 @@ def test_guided_upsample_dem_constant_guide_returns_box_filtered_baseline(tmp_pa
     dem_data = np.arange(16, dtype=np.float32).reshape(4, 4) + 10.0
     _write_tif(dem, dem_data, west=0, south=0, east=40, north=40)
     _write_multiband_tif(
-        optical, np.ones((1, 16, 16), dtype=np.float32), west=0, south=0, east=40, north=40
+        optical,
+        np.ones((1, 16, 16), dtype=np.float32),
+        west=0,
+        south=0,
+        east=40,
+        north=40,
     )
 
     out = tmp_path / "out.tif"
@@ -139,8 +144,6 @@ def test_guided_upsample_dem_constant_guide_returns_box_filtered_baseline(tmp_pa
         baseline = Path(tmp) / "baseline.tif"
         align_raster_grid(optical, dem, baseline, resampling="cubic")
         with rasterio.open(baseline) as ds:
-            from vecraspy.sr import _box_filter
-
             # A constant guide carries no structure: var_I and cov_Ip are both
             # exactly zero everywhere, so a=0 and b=mean_p. The guided filter's
             # own final averaging step then box-filters b again (mean_b), so
@@ -193,7 +196,12 @@ def test_guided_upsample_dem_preserves_nodata(tmp_path):
     dem_data[0, :] = -9999.0
     _write_tif(dem, dem_data, west=0, south=0, east=40, north=40, nodata=-9999.0)
     _write_multiband_tif(
-        optical, np.ones((1, 16, 16), dtype=np.float32), west=0, south=0, east=40, north=40
+        optical,
+        np.ones((1, 16, 16), dtype=np.float32),
+        west=0,
+        south=0,
+        east=40,
+        north=40,
     )
 
     out = tmp_path / "out.tif"
@@ -256,9 +264,6 @@ def test_guided_upsample_dem_invalid_resampling_raises(tmp_path):
         guided_upsample_dem(dem, optical, tmp_path / "out.tif", resampling="magic")
 
 
-from vecraspy.sr import simulate_thermal_erosion
-
-
 def test_simulate_thermal_erosion_flat_terrain_unchanged(tmp_path):
     dem = tmp_path / "dem.tif"
     data = np.full((10, 10), 50.0, dtype=np.float32)
@@ -279,7 +284,9 @@ def test_simulate_thermal_erosion_reduces_spike(tmp_path):
     _write_tif(dem, data, west=0, south=0, east=9, north=9)
 
     out = tmp_path / "out.tif"
-    simulate_thermal_erosion(dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5)
+    simulate_thermal_erosion(
+        dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5
+    )
 
     with rasterio.open(out) as ds:
         result = ds.read(1)
@@ -295,7 +302,9 @@ def test_simulate_thermal_erosion_conserves_total_mass(tmp_path):
     _write_tif(dem, data, west=0, south=0, east=9, north=9)
 
     out = tmp_path / "out.tif"
-    simulate_thermal_erosion(dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5)
+    simulate_thermal_erosion(
+        dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5
+    )
 
     with rasterio.open(out) as ds:
         result = ds.read(1)
@@ -311,7 +320,9 @@ def test_simulate_thermal_erosion_ignores_nodata_neighbors(tmp_path):
     _write_tif(dem, data, west=0, south=0, east=9, north=9, nodata=-9999.0)
 
     out = tmp_path / "out.tif"
-    simulate_thermal_erosion(dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5)
+    simulate_thermal_erosion(
+        dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5
+    )
 
     with rasterio.open(out) as ds:
         result = ds.read(1)
@@ -358,9 +369,6 @@ def test_simulate_thermal_erosion_invalid_transfer_rate_raises(tmp_path):
         simulate_thermal_erosion(dem, tmp_path / "out.tif", transfer_rate=0.0)
 
 
-from vecraspy.sr import super_resolve_dtm
-
-
 def test_super_resolve_dtm_without_erosion_matches_guided_upsample(tmp_path):
     dem = tmp_path / "dem.tif"
     optical = tmp_path / "optical.tif"
@@ -373,7 +381,12 @@ def test_super_resolve_dtm_without_erosion_matches_guided_upsample(tmp_path):
         north=40,
     )
     _write_multiband_tif(
-        optical, np.ones((1, 16, 16), dtype=np.float32), west=0, south=0, east=40, north=40
+        optical,
+        np.ones((1, 16, 16), dtype=np.float32),
+        west=0,
+        south=0,
+        east=40,
+        north=40,
     )
 
     direct = tmp_path / "direct.tif"
@@ -399,7 +412,12 @@ def test_super_resolve_dtm_with_erosion_applies_erosion(tmp_path):
         north=40,
     )
     _write_multiband_tif(
-        optical, np.ones((1, 16, 16), dtype=np.float32), west=0, south=0, east=40, north=40
+        optical,
+        np.ones((1, 16, 16), dtype=np.float32),
+        west=0,
+        south=0,
+        east=40,
+        north=40,
     )
 
     without_erosion = tmp_path / "without.tif"
