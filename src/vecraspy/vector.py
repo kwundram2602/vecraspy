@@ -281,6 +281,33 @@ def write_trajectories(
     return outputs
 
 
+def get_aoi_center(aoi: gpd.GeoDataFrame) -> tuple[float, float]:
+    """Return the centre point of an AOI as (lat, lon) in EPSG:4326.
+
+    Args:
+        aoi: Area of interest. Multiple rows are unioned before computing
+            the bounding box centre.
+
+    Returns:
+        (lat, lon) tuple for the centre of the AOI's bounding box.
+
+    Raises:
+        ValueError: If aoi has no CRS defined.
+    """
+    if aoi.crs is None:
+        raise ValueError(
+            "AOI has no CRS defined; cannot compute centre point in EPSG:4326."
+        )
+
+    if aoi.crs.to_epsg() != 4326:
+        aoi = aoi.to_crs(epsg=4326)
+
+    west, south, east, north = aoi.total_bounds
+    lon = (west + east) / 2
+    lat = (south + north) / 2
+    return lat, lon
+
+
 def get_stac_spatial_extent(aoi: gpd.GeoDataFrame) -> list:
 
     if aoi.crs is None:
@@ -293,3 +320,4 @@ def get_stac_spatial_extent(aoi: gpd.GeoDataFrame) -> list:
 
     west, south, east, north = aoi.total_bounds
     return [west, south, east, north]
+
