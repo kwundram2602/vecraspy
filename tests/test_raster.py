@@ -8,7 +8,12 @@ import rasterio
 from rasterio.crs import CRS
 from rasterio.transform import from_bounds
 
-from vecraspy.raster import _collect_tif_paths, merge_tifs, reproject_raster
+from vecraspy.raster import (
+    _collect_tif_paths,
+    merge_tifs,
+    reproject_raster,
+    tif_bounds_as_polygon,
+)
 
 
 def _write_tif(
@@ -388,3 +393,59 @@ def test_reproject_raster_without_crs_raises(tmp_path):
 
     with pytest.raises(rasterio.errors.CRSError, match="no CRS"):
         reproject_raster(src_tif, out, "EPSG:4326")
+
+
+def test_tif_bounds_as_polygon_default_returns_bbox(tmp_path):
+    tif = tmp_path / "src.tif"
+    data = np.ones((4, 4), dtype=np.float32)
+    data[0, 0] = -9999  # would be excluded by exact=True, ignored here
+    _write_tif(tif, data, west=0.0, south=0.0, east=4.0, north=4.0, nodata=-9999)
+
+    result = tif_bounds_as_polygon(tif)
+
+    assert result.bounds == (0.0, 0.0, 4.0, 4.0)
+
+
+def test_tif_bounds_as_polygon_exact_excludes_nodata_area(tmp_path):
+    tif = tmp_path / "src.tif"
+    data = np.ones((4, 4), dtype=np.float32)
+    data[:2, :] = -9999  # top half is nodata
+    _write_tif(tif, data, west=0.0, south=0.0, east=4.0, north=4.0, nodata=-9999)
+
+    bbox = tif_bounds_as_polygon(tif)
+    footprint = tif_bounds_as_polygon(tif, exact=True)
+
+    assert footprint.area < bbox.area
+    assert footprint.within(bbox)
+
+
+def test_tif_bounds_as_polygon_exact_disjoint_returns_single_polygon(tmp_path):
+    tif = tmp_path / "src.tif"
+    data = np.full((6, 6), -9999, dtype=np.float32)
+    data[0:2, 0:2] = 1  # top-left block
+    data[4:6, 4:6] = 1  # bottom-right block, disjoint from the first
+    _write_tif(tif, data, west=0.0, south=0.0, east=6.0, north=6.0, nodata=-9999)
+
+    footprint = tif_bounds_as_polygon(tif, exact=True)
+
+    assert footprint.geom_type == "Polygon"
+
+
+def test_tif_bounds_as_polygon_simplify_tolerance_without_exact_raises(tmp_path):
+    tif = tmp_path / "src.tif"
+    _write_tif(tif, np.ones((4, 4), dtype=np.float32))
+
+    with pytest.raises(ValueError, match="simplify_tolerance requires exact=True"):
+        tif_bounds_as_polygon(tif, simplify_tolerance=0.5)
+
+
+def test_tif_bounds_as_polygon_simplify_tolerance_applies(tmp_path):
+    tif = tmp_path / "src.tif"
+    data = np.ones((8, 8), dtype=np.float32)
+    data[3, 3] = -9999  # single pixel notch to create extra vertices
+    _write_tif(tif, data, west=0.0, south=0.0, east=8.0, north=8.0, nodata=-9999)
+
+    raw = tif_bounds_as_polygon(tif, exact=True)
+    simplified = tif_bounds_as_polygon(tif, exact=True, simplify_tolerance=2.0)
+
+    assert len(simplified.exterior.coords) <= len(raw.exterior.coords)

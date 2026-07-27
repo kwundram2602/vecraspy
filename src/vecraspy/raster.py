@@ -8,12 +8,15 @@ import rasterio
 import whitebox_workflows as wbw
 from rasterio.crs import CRS
 from rasterio.enums import Resampling
+from rasterio.features import shapes as _rasterio_shapes
 from rasterio.mask import mask as _rasterio_mask
 from rasterio.merge import merge as _rasterio_merge
 from rasterio.transform import from_bounds
 from rasterio.vrt import WarpedVRT
 from rasterio.warp import calculate_default_transform, reproject, transform_bounds
+from shapely import union_all
 from shapely.geometry import box
+from shapely.geometry import shape as _shapely_shape
 from shapely.geometry.base import BaseGeometry
 from shapely.geometry.polygon import Polygon
 
@@ -148,29 +151,64 @@ def merge_tifs(
     return out_path
 
 
-def tif_bounds_as_polygon(path: Path | str) -> Polygon:
-    """Return the bounding box of a GeoTIFF as a Shapely polygon.
+def tif_bounds_as_polygon(
+    path: Path | str,
+    *,
+    exact: bool = False,
+    simplify_tolerance: float | None = None,
+) -> Polygon:
+    """Return the bounding box or valid-data footprint of a GeoTIFF as a polygon.
 
     The polygon is in the CRS of the raster (no reprojection).
 
     Args:
         path: Path to the GeoTIFF file.
+        exact: If False (default), return the rectangular bounding box. If
+            True, return the true footprint of valid (non-nodata) pixels,
+            derived from the raster's cross-band valid-data mask. A disjoint
+            footprint (e.g. a diagonal swath) is reduced to its convex hull
+            so the return type is always a single Polygon.
+        simplify_tolerance: Tolerance (in raster CRS units) for simplifying
+            the footprint polygon, smoothing the blocky pixel-boundary edges
+            produced by polygonizing a raster mask. Only valid with
+            exact=True.
 
     Returns:
-        A rectangular Shapely polygon covering the raster extent.
+        A Shapely polygon covering the raster extent (bounding box) or its
+        valid-data footprint.
 
     Raises:
         FileNotFoundError: If the file does not exist.
+        ValueError: If simplify_tolerance is given without exact=True.
         rasterio.errors.RasterioIOError: If the file cannot be opened.
     """
+    if simplify_tolerance is not None and not exact:
+        raise ValueError("simplify_tolerance requires exact=True")
+
     tif_path = Path(path)
     if not tif_path.exists():
         raise FileNotFoundError(f"file not found: {tif_path}")
 
     with rasterio.open(tif_path) as dataset:
-        bounds = dataset.bounds
+        if not exact:
+            bounds = dataset.bounds
+            return box(bounds.left, bounds.bottom, bounds.right, bounds.top)
 
-    return box(bounds.left, bounds.bottom, bounds.right, bounds.top)
+        mask = dataset.dataset_mask()
+        polygons = [
+            _shapely_shape(geom)
+            for geom, value in _rasterio_shapes(mask, transform=dataset.transform)
+            if value != 0
+        ]
+
+    footprint = union_all(polygons)
+    if footprint.geom_type != "Polygon":
+        footprint = footprint.convex_hull
+
+    if simplify_tolerance is not None:
+        footprint = footprint.simplify(simplify_tolerance, preserve_topology=True)
+
+    return footprint
 
 
 def ndvi(red: np.ndarray, nir: np.ndarray) -> np.ndarray:
