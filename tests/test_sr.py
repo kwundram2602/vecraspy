@@ -183,3 +183,24 @@ def test_guided_upsample_dem_sharpens_edge_relative_to_baseline(tmp_path):
         return float(np.max(np.abs(np.diff(row))))
 
     assert steepest_gradient(guided_row) > steepest_gradient(baseline_row)
+
+
+def test_guided_upsample_dem_preserves_nodata(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+
+    dem_data = np.full((4, 4), 10.0, dtype=np.float32)
+    dem_data[0, :] = -9999.0
+    _write_tif(dem, dem_data, west=0, south=0, east=40, north=40, nodata=-9999.0)
+    _write_multiband_tif(
+        optical, np.ones((1, 16, 16), dtype=np.float32), west=0, south=0, east=40, north=40
+    )
+
+    out = tmp_path / "out.tif"
+    guided_upsample_dem(dem, optical, out)
+
+    with rasterio.open(out) as ds:
+        assert ds.nodata == -9999.0
+        data = ds.read(1)
+        assert data[0, 0] == -9999.0
+        assert data[-1, 0] != -9999.0
