@@ -155,3 +155,109 @@ def guided_upsample_dem(
             dst.write(result.astype(np.float32), 1)
 
     return out_path
+
+
+_NEIGHBOR_OFFSETS: list[tuple[int, int]] = [
+    (-1, -1), (-1, 0), (-1, 1),
+    (0, -1), (0, 1),
+    (1, -1), (1, 0), (1, 1),
+]
+
+
+def _shift(arr: np.ndarray, dy: int, dx: int) -> np.ndarray:
+    """Return arr shifted by (dy, dx), replicating edge values (no wrap)."""
+    height, width = arr.shape
+    padded = np.pad(arr, 1, mode="edge")
+    return padded[1 + dy : 1 + dy + height, 1 + dx : 1 + dx + width]
+
+
+def simulate_thermal_erosion(
+    dem_path: Path | str,
+    output_path: Path | str,
+    *,
+    iterations: int = 50,
+    talus_angle: float = 35.0,
+    transfer_rate: float = 0.5,
+) -> Path:
+    """Refine a DEM with a vectorized talus-angle thermal erosion simulation.
+
+    Each iteration, every cell sheds material toward its steepest of 8
+    neighbours if the slope to that neighbour exceeds talus_angle, moving a
+    transfer_rate fraction of the excess toward the talus-stable level.
+    Purely procedural, independent of any optical guide. Nodata cells do not
+    participate in material transport.
+
+    Args:
+        dem_path: Path to the source DEM GeoTIFF.
+        output_path: Path for the eroded output GeoTIFF.
+        iterations: Number of simulation steps.
+        talus_angle: Talus (repose) angle in degrees, in (0, 90).
+        transfer_rate: Fraction (0, 1] of the excess above the talus-stable
+            level moved per iteration.
+
+    Returns:
+        The resolved output_path as a Path.
+
+    Raises:
+        FileNotFoundError: If dem_path does not exist.
+        ValueError: If iterations <= 0, talus_angle is outside (0, 90), or
+            transfer_rate is outside (0, 1].
+    """
+    dem_path = Path(dem_path)
+    if not dem_path.exists():
+        raise FileNotFoundError(f"file not found: {dem_path}")
+    if iterations <= 0:
+        raise ValueError(f"iterations must be > 0, got {iterations}")
+    if not 0 < talus_angle < 90:
+        raise ValueError(f"talus_angle must be in (0, 90), got {talus_angle}")
+    if not 0 < transfer_rate <= 1:
+        raise ValueError(f"transfer_rate must be in (0, 1], got {transfer_rate}")
+
+    with rasterio.open(dem_path) as src:
+        height_map = src.read(1).astype(np.float64)
+        profile = src.profile.copy()
+        nodata = src.nodata
+        valid_mask = src.read_masks(1) != 0
+        pixel_size = (abs(src.transform.a) + abs(src.transform.e)) / 2
+
+    talus_slope = math.tan(math.radians(talus_angle))
+    rows, cols = np.indices(height_map.shape)
+
+    for _ in range(iterations):
+        best_diff = np.zeros_like(height_map)
+        best_dy = np.zeros(height_map.shape, dtype=np.int8)
+        best_dx = np.zeros(height_map.shape, dtype=np.int8)
+
+        for dy, dx in _NEIGHBOR_OFFSETS:
+            neighbor = _shift(height_map, dy, dx)
+            distance = pixel_size * math.hypot(dy, dx)
+            diff = height_map - neighbor - talus_slope * distance
+            is_better = diff > best_diff
+            best_diff = np.where(is_better, diff, best_diff)
+            best_dy = np.where(is_better, dy, best_dy)
+            best_dx = np.where(is_better, dx, best_dx)
+
+        transportable = valid_mask & (best_diff > 0)
+        amount = np.where(transportable, transfer_rate * best_diff / 2, 0.0)
+
+        target_rows = np.clip(rows + best_dy, 0, height_map.shape[0] - 1)
+        target_cols = np.clip(cols + best_dx, 0, height_map.shape[1] - 1)
+
+        inflow = np.zeros_like(height_map)
+        np.add.at(
+            inflow,
+            (target_rows[transportable], target_cols[transportable]),
+            amount[transportable],
+        )
+
+        height_map = height_map - amount + inflow
+
+    if nodata is not None:
+        height_map[~valid_mask] = nodata
+
+    profile.update(dtype="float32")
+    out_path = Path(output_path)
+    with rasterio.open(out_path, "w", **profile) as dst:
+        dst.write(height_map.astype(np.float32), 1)
+
+    return out_path

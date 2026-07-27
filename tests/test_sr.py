@@ -254,3 +254,59 @@ def test_guided_upsample_dem_invalid_resampling_raises(tmp_path):
     _write_multiband_tif(optical, np.ones((1, 4, 4), dtype=np.float32))
     with pytest.raises(ValueError, match="invalid resampling"):
         guided_upsample_dem(dem, optical, tmp_path / "out.tif", resampling="magic")
+
+
+from vecraspy.sr import simulate_thermal_erosion
+
+
+def test_simulate_thermal_erosion_flat_terrain_unchanged(tmp_path):
+    dem = tmp_path / "dem.tif"
+    data = np.full((10, 10), 50.0, dtype=np.float32)
+    _write_tif(dem, data, west=0, south=0, east=10, north=10)
+
+    out = tmp_path / "out.tif"
+    simulate_thermal_erosion(dem, out, iterations=10)
+
+    with rasterio.open(out) as ds:
+        result = ds.read(1)
+    np.testing.assert_allclose(result, data, atol=1e-6)
+
+
+def test_simulate_thermal_erosion_reduces_spike(tmp_path):
+    dem = tmp_path / "dem.tif"
+    data = np.full((9, 9), 10.0, dtype=np.float32)
+    data[4, 4] = 100.0
+    _write_tif(dem, data, west=0, south=0, east=9, north=9)
+
+    out = tmp_path / "out.tif"
+    simulate_thermal_erosion(dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5)
+
+    with rasterio.open(out) as ds:
+        result = ds.read(1)
+
+    assert result[4, 4] < 100.0
+    assert result[4, 4] > 10.0
+
+
+def test_simulate_thermal_erosion_conserves_total_mass(tmp_path):
+    dem = tmp_path / "dem.tif"
+    data = np.full((9, 9), 10.0, dtype=np.float32)
+    data[4, 4] = 100.0
+    _write_tif(dem, data, west=0, south=0, east=9, north=9)
+
+    out = tmp_path / "out.tif"
+    simulate_thermal_erosion(dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5)
+
+    with rasterio.open(out) as ds:
+        result = ds.read(1)
+
+    assert result.sum() == pytest.approx(data.sum(), rel=1e-4)
+
+
+def test_simulate_thermal_erosion_returns_path(tmp_path):
+    dem = tmp_path / "dem.tif"
+    _write_tif(dem, np.full((4, 4), 5.0, dtype=np.float32))
+    out = tmp_path / "out.tif"
+    result = simulate_thermal_erosion(dem, out)
+    assert isinstance(result, Path)
+    assert result == out
