@@ -204,3 +204,53 @@ def test_guided_upsample_dem_preserves_nodata(tmp_path):
         data = ds.read(1)
         assert data[0, 0] == -9999.0
         assert data[-1, 0] != -9999.0
+
+
+def test_guided_upsample_dem_missing_dem_raises(tmp_path):
+    optical = tmp_path / "optical.tif"
+    _write_multiband_tif(optical, np.ones((1, 4, 4), dtype=np.float32))
+    with pytest.raises(FileNotFoundError, match="file not found"):
+        guided_upsample_dem(tmp_path / "ghost.tif", optical, tmp_path / "out.tif")
+
+
+def test_guided_upsample_dem_missing_optical_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    _write_tif(dem, np.ones((4, 4), dtype=np.float32))
+    with pytest.raises(FileNotFoundError, match="file not found"):
+        guided_upsample_dem(dem, tmp_path / "ghost.tif", tmp_path / "out.tif")
+
+
+def test_guided_upsample_dem_invalid_radius_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+    _write_tif(dem, np.ones((4, 4), dtype=np.float32))
+    _write_multiband_tif(optical, np.ones((1, 4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="radius must be > 0"):
+        guided_upsample_dem(dem, optical, tmp_path / "out.tif", radius=0)
+
+
+def test_guided_upsample_dem_invalid_eps_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+    _write_tif(dem, np.ones((4, 4), dtype=np.float32))
+    _write_multiband_tif(optical, np.ones((1, 4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="eps must be > 0"):
+        guided_upsample_dem(dem, optical, tmp_path / "out.tif", eps=0)
+
+
+def test_guided_upsample_dem_invalid_band_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+    _write_tif(dem, np.ones((4, 4), dtype=np.float32))
+    _write_multiband_tif(optical, np.ones((1, 4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match=r"band must be in \[1, 1\]"):
+        guided_upsample_dem(dem, optical, tmp_path / "out.tif", band=2)
+
+
+def test_guided_upsample_dem_invalid_resampling_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+    _write_tif(dem, np.ones((4, 4), dtype=np.float32))
+    _write_multiband_tif(optical, np.ones((1, 4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="invalid resampling"):
+        guided_upsample_dem(dem, optical, tmp_path / "out.tif", resampling="magic")
