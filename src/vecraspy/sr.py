@@ -267,3 +267,52 @@ def simulate_thermal_erosion(
         dst.write(height_map.astype(np.float32), 1)
 
     return out_path
+
+
+def super_resolve_dtm(
+    dem_path: Path | str,
+    optical_path: Path | str,
+    output_path: Path | str,
+    *,
+    band: int | None = None,
+    radius: int = 8,
+    eps: float = 1e-2,
+    apply_erosion: bool = False,
+    erosion_kwargs: dict | None = None,
+) -> Path:
+    """Super-resolve a DEM: guided upsampling, plus optional thermal erosion.
+
+    Chains guided_upsample_dem and, when apply_erosion is True,
+    simulate_thermal_erosion.
+
+    Args:
+        dem_path: Path to the source DEM GeoTIFF.
+        optical_path: Path to the co-registered high-resolution optical GeoTIFF.
+        output_path: Path for the final output GeoTIFF.
+        band: Forwarded to guided_upsample_dem.
+        radius: Forwarded to guided_upsample_dem.
+        eps: Forwarded to guided_upsample_dem.
+        apply_erosion: If True, run simulate_thermal_erosion on the guided
+            upsampling result before writing output_path.
+        erosion_kwargs: Keyword arguments forwarded to simulate_thermal_erosion
+            when apply_erosion is True (e.g. iterations, talus_angle,
+            transfer_rate).
+
+    Returns:
+        The resolved output_path as a Path.
+    """
+    output_path = Path(output_path)
+
+    if not apply_erosion:
+        return guided_upsample_dem(
+            dem_path, optical_path, output_path, band=band, radius=radius, eps=eps
+        )
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        upsampled = Path(tmp_dir) / "upsampled.tif"
+        guided_upsample_dem(
+            dem_path, optical_path, upsampled, band=band, radius=radius, eps=eps
+        )
+        simulate_thermal_erosion(upsampled, output_path, **(erosion_kwargs or {}))
+
+    return output_path

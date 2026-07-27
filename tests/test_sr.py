@@ -356,3 +356,66 @@ def test_simulate_thermal_erosion_invalid_transfer_rate_raises(tmp_path):
     _write_tif(dem, np.ones((4, 4), dtype=np.float32))
     with pytest.raises(ValueError, match="transfer_rate must be in"):
         simulate_thermal_erosion(dem, tmp_path / "out.tif", transfer_rate=0.0)
+
+
+from vecraspy.sr import super_resolve_dtm
+
+
+def test_super_resolve_dtm_without_erosion_matches_guided_upsample(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+    _write_tif(
+        dem,
+        np.arange(16, dtype=np.float32).reshape(4, 4) + 10.0,
+        west=0,
+        south=0,
+        east=40,
+        north=40,
+    )
+    _write_multiband_tif(
+        optical, np.ones((1, 16, 16), dtype=np.float32), west=0, south=0, east=40, north=40
+    )
+
+    direct = tmp_path / "direct.tif"
+    guided_upsample_dem(dem, optical, direct)
+
+    via_pipeline = tmp_path / "pipeline.tif"
+    result = super_resolve_dtm(dem, optical, via_pipeline)
+
+    assert result == via_pipeline
+    with rasterio.open(direct) as a, rasterio.open(via_pipeline) as b:
+        np.testing.assert_allclose(a.read(1), b.read(1))
+
+
+def test_super_resolve_dtm_with_erosion_applies_erosion(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+    _write_tif(
+        dem,
+        np.arange(16, dtype=np.float32).reshape(4, 4) + 10.0,
+        west=0,
+        south=0,
+        east=40,
+        north=40,
+    )
+    _write_multiband_tif(
+        optical, np.ones((1, 16, 16), dtype=np.float32), west=0, south=0, east=40, north=40
+    )
+
+    without_erosion = tmp_path / "without.tif"
+    guided_upsample_dem(dem, optical, without_erosion, radius=2)
+
+    with_erosion = tmp_path / "with.tif"
+    super_resolve_dtm(
+        dem,
+        optical,
+        with_erosion,
+        radius=2,
+        apply_erosion=True,
+        erosion_kwargs={"iterations": 5, "talus_angle": 5.0, "transfer_rate": 1.0},
+    )
+
+    with rasterio.open(without_erosion) as a, rasterio.open(with_erosion) as b:
+        data_a = a.read(1)
+        data_b = b.read(1)
+    assert not np.allclose(data_a, data_b)
