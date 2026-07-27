@@ -330,3 +330,29 @@ def test_simulate_thermal_erosion_returns_path(tmp_path):
     result = simulate_thermal_erosion(dem, out)
     assert isinstance(result, Path)
     assert result == out
+
+
+def test_simulate_thermal_erosion_missing_file_raises(tmp_path):
+    with pytest.raises(FileNotFoundError, match="file not found"):
+        simulate_thermal_erosion(tmp_path / "ghost.tif", tmp_path / "out.tif")
+
+
+def test_simulate_thermal_erosion_invalid_iterations_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    _write_tif(dem, np.ones((4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="iterations must be > 0"):
+        simulate_thermal_erosion(dem, tmp_path / "out.tif", iterations=0)
+
+
+def test_simulate_thermal_erosion_invalid_talus_angle_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    _write_tif(dem, np.ones((4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="talus_angle must be in"):
+        simulate_thermal_erosion(dem, tmp_path / "out.tif", talus_angle=90.0)
+
+
+def test_simulate_thermal_erosion_invalid_transfer_rate_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    _write_tif(dem, np.ones((4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="transfer_rate must be in"):
+        simulate_thermal_erosion(dem, tmp_path / "out.tif", transfer_rate=0.0)
