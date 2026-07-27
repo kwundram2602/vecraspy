@@ -303,6 +303,26 @@ def test_simulate_thermal_erosion_conserves_total_mass(tmp_path):
     assert result.sum() == pytest.approx(data.sum(), rel=1e-4)
 
 
+def test_simulate_thermal_erosion_ignores_nodata_neighbors(tmp_path):
+    dem = tmp_path / "dem.tif"
+    data = np.full((9, 9), 10.0, dtype=np.float32)
+    data[4, 4] = 100.0
+    data[4, 5] = -9999.0  # nodata cell right next to the spike
+    _write_tif(dem, data, west=0, south=0, east=9, north=9, nodata=-9999.0)
+
+    out = tmp_path / "out.tif"
+    simulate_thermal_erosion(dem, out, iterations=20, talus_angle=45.0, transfer_rate=0.5)
+
+    with rasterio.open(out) as ds:
+        result = ds.read(1)
+        valid = ds.read_masks(1) != 0
+
+    # The nodata cell must stay untouched, and no real elevation may drain
+    # into it — total mass over the *valid* region alone is conserved.
+    assert result[4, 5] == -9999.0
+    assert result[valid].sum() == pytest.approx(data[valid].sum(), rel=1e-4)
+
+
 def test_simulate_thermal_erosion_returns_path(tmp_path):
     dem = tmp_path / "dem.tif"
     _write_tif(dem, np.full((4, 4), 5.0, dtype=np.float32))

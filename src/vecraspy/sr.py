@@ -230,8 +230,14 @@ def simulate_thermal_erosion(
 
         for dy, dx in _NEIGHBOR_OFFSETS:
             neighbor = _shift(height_map, dy, dx)
+            neighbor_valid = _shift(valid_mask, dy, dx)
             distance = pixel_size * math.hypot(dy, dx)
             diff = height_map - neighbor - talus_slope * distance
+            # A nodata neighbour must never be chosen as a transport target —
+            # its raw sentinel value (e.g. -9999) would otherwise look like an
+            # enormous drop and drain real elevation from valid cells at the
+            # border, since the nodata mask is only restored once at the end.
+            diff = np.where(neighbor_valid, diff, -np.inf)
             is_better = diff > best_diff
             best_diff = np.where(is_better, diff, best_diff)
             best_dy = np.where(is_better, dy, best_dy)
