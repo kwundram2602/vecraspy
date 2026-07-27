@@ -20,6 +20,11 @@ from vecraspy.raster import (
     summarize_extracted_raster_values,
     tif_bounds_as_polygon,
 )
+from vecraspy.sr import (
+    guided_upsample_dem,
+    simulate_thermal_erosion,
+    super_resolve_dtm,
+)
 from vecraspy.terrain import (
     aspect,
     hillshade,
@@ -58,6 +63,7 @@ __all__ = [
     "get_bounds_as_gdf",
     "get_stac_spatial_extent",
     "group_by_id",
+    "guided_upsample_dem",
     "hillshade",
     "hillshade_path",
     "merge_tifs",
@@ -70,8 +76,10 @@ __all__ = [
     "reproject_raster",
     "same_nodata_mask",
     "scale_raster_to_gsd",
+    "simulate_thermal_erosion",
     "slope",
     "summarize_extracted_raster_values",
+    "super_resolve_dtm",
     "tif_bounds_as_polygon",
     "write_trajectories",
 ]
