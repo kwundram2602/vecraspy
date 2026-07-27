@@ -188,6 +188,56 @@ def test_guided_upsample_dem_sharpens_edge_relative_to_baseline(tmp_path):
     assert steepest_gradient(guided_row) > steepest_gradient(baseline_row)
 
 
+def test_guided_upsample_dem_ignores_optical_nodata_in_guide_normalization(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+
+    dem_data = np.zeros((4, 4), dtype=np.float32)
+    dem_data[:, 2:] = 100.0
+    _write_tif(dem, dem_data, west=0, south=0, east=40, north=40)
+
+    # Realistic satellite DN range (1000-5000) with a uint16 nodata sentinel
+    # (65535) scattered on a few pixels. Naively including the sentinel in
+    # the guide's min/max normalization compresses the true [1000, 5000]
+    # span down to roughly [0, 0.062] of [0, 1] (verified numerically:
+    # (5000-1000)/(65535-1000) = 0.062). At the default eps=1e-2, that
+    # compressed variance is swamped by the regularization term, driving the
+    # guided filter's "a" coefficient toward zero and collapsing the output
+    # to essentially the box-filtered baseline (steepest_gradient ~15.8),
+    # *less* sharp than the plain bicubic baseline (~30.9) -- verified
+    # numerically by running this exact scenario with the guide-masking fix
+    # disabled before writing this test.
+    guide_data = np.full((1, 16, 16), 1000, dtype=np.uint16)
+    guide_data[:, :, 8:] = 5000
+    guide_data[0, 1, 1] = 65535
+    guide_data[0, 3, 12] = 65535
+    guide_data[0, 14, 5] = 65535
+    _write_multiband_tif(
+        optical, guide_data, west=0, south=0, east=40, north=40, nodata=65535
+    )
+
+    baseline = tmp_path / "baseline.tif"
+    align_raster_grid(optical, dem, baseline, resampling="cubic")
+
+    out = tmp_path / "out.tif"
+    guided_upsample_dem(dem, optical, out, radius=3, eps=1e-2)
+
+    with rasterio.open(baseline) as ds:
+        baseline_row = ds.read(1)[8]
+    with rasterio.open(out) as ds:
+        guided_row = ds.read(1)[8]
+
+    def steepest_gradient(row):
+        return float(np.max(np.abs(np.diff(row))))
+
+    # If the nodata sentinel had contaminated normalization, the guide would
+    # carry almost no structure and the guided filter would degrade to a
+    # blur *less* sharp than the plain bicubic baseline. With the fix, the
+    # edge is still tracked strongly, same as the plain (no-nodata)
+    # sharpening test.
+    assert steepest_gradient(guided_row) > steepest_gradient(baseline_row)
+
+
 def test_guided_upsample_dem_preserves_nodata(tmp_path):
     dem = tmp_path / "dem.tif"
     optical = tmp_path / "optical.tif"
@@ -212,6 +262,60 @@ def test_guided_upsample_dem_preserves_nodata(tmp_path):
         data = ds.read(1)
         assert data[0, 0] == -9999.0
         assert data[-1, 0] != -9999.0
+
+
+def test_guided_upsample_dem_int16_dem_baseline_is_not_quantized(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+
+    # int16 is the native dtype of SRTM/ASTER GDEM/most national 30m DTMs.
+    # align_raster_grid writes its output using the target (DEM)'s dtype, so
+    # if the source DEM array passed into alignment is int16, the
+    # bicubic-upsampled baseline gets quantized to 1-unit steps before the
+    # guided filter ever runs, baking in terracing.
+    dem_data = np.zeros((4, 4), dtype=np.int16)
+    dem_data[:, 2:] = 100
+    _write_tif(dem, dem_data, west=0, south=0, east=40, north=40)
+
+    guide_data = np.zeros((1, 16, 16), dtype=np.float32)
+    guide_data[:, :, 8:] = 1.0
+    _write_multiband_tif(optical, guide_data, west=0, south=0, east=40, north=40)
+
+    out = tmp_path / "out.tif"
+    guided_upsample_dem(dem, optical, out, radius=3)
+
+    with rasterio.open(out) as ds:
+        result = ds.read(1)
+
+    # If the DEM were quantized to int16 before filtering, every value in
+    # the bicubic-warped baseline (and thus almost certainly the filtered
+    # result) would land on an integer. A properly float-preserved baseline
+    # produces genuinely fractional values across the upsampled edge.
+    fractional = np.abs(result - np.round(result))
+    assert fractional.max() > 0.1
+
+
+def test_guided_upsample_dem_multiband_dem_output_has_single_band(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+
+    dem_data = np.zeros((2, 4, 4), dtype=np.float32)
+    dem_data[:, :, 2:] = 100.0
+    _write_multiband_tif(dem, dem_data, west=0, south=0, east=40, north=40)
+    _write_multiband_tif(
+        optical,
+        np.ones((1, 16, 16), dtype=np.float32),
+        west=0,
+        south=0,
+        east=40,
+        north=40,
+    )
+
+    out = tmp_path / "out.tif"
+    guided_upsample_dem(dem, optical, out)
+
+    with rasterio.open(out) as ds:
+        assert ds.count == 1
 
 
 def test_guided_upsample_dem_missing_dem_raises(tmp_path):
@@ -253,6 +357,26 @@ def test_guided_upsample_dem_invalid_band_raises(tmp_path):
     _write_multiband_tif(optical, np.ones((1, 4, 4), dtype=np.float32))
     with pytest.raises(ValueError, match=r"band must be in \[1, 1\]"):
         guided_upsample_dem(dem, optical, tmp_path / "out.tif", band=2)
+
+
+def test_guided_upsample_dem_dem_without_crs_raises(tmp_path):
+    dem = tmp_path / "dem.tif"
+    optical = tmp_path / "optical.tif"
+    with rasterio.open(
+        dem,
+        "w",
+        driver="GTiff",
+        height=4,
+        width=4,
+        count=1,
+        dtype="float32",
+        transform=from_bounds(0, 0, 4, 4, 4, 4),
+    ) as dst:
+        dst.write(np.ones((4, 4), dtype=np.float32), 1)
+    _write_multiband_tif(optical, np.ones((1, 4, 4), dtype=np.float32))
+
+    with pytest.raises(rasterio.errors.CRSError, match="no CRS"):
+        guided_upsample_dem(dem, optical, tmp_path / "out.tif")
 
 
 def test_guided_upsample_dem_invalid_resampling_raises(tmp_path):
@@ -332,6 +456,44 @@ def test_simulate_thermal_erosion_ignores_nodata_neighbors(tmp_path):
     # into it — total mass over the *valid* region alone is conserved.
     assert result[4, 5] == -9999.0
     assert result[valid].sum() == pytest.approx(data[valid].sum(), rel=1e-4)
+
+
+def test_simulate_thermal_erosion_pit_can_overshoot_into_a_bump(tmp_path):
+    """Pins the documented donor-independence overshoot artifact.
+
+    Each of a pit's donor neighbours computes its own transfer independent
+    of the others, so multiple donors can push material into the same pit
+    in a single iteration and overshoot past the surrounding level. This
+    test does not assert that's fixed -- it pins the current, documented
+    behavior so a future change to the transport algorithm shows up here
+    explicitly instead of silently.
+    """
+    dem = tmp_path / "dem.tif"
+    data = np.full((9, 9), 100.0, dtype=np.float32)
+    data[4, 4] = 95.0  # a 5-unit pit in an otherwise flat 100-unit plain
+    _write_tif(dem, data, west=0, south=0, east=9, north=9)
+
+    out = tmp_path / "out.tif"
+    simulate_thermal_erosion(dem, out, iterations=1)
+
+    with rasterio.open(out) as ds:
+        result = ds.read(1)
+
+    neighbors = [
+        result[4 + dy, 4 + dx]
+        for dy in (-1, 0, 1)
+        for dx in (-1, 0, 1)
+        if not (dy == 0 and dx == 0)
+    ]
+
+    # Pinned observed values (default talus_angle=35.0, transfer_rate=0.5).
+    np.testing.assert_allclose(result[4, 4], 103.3095474, rtol=1e-6)
+
+    # The pit is no longer a pit: after 1 iteration it sits above every one
+    # of its 8 neighbours (and above the original 100-unit plain), i.e. the
+    # 8 independent donor transfers overshot past the talus-stable level.
+    assert result[4, 4] > max(neighbors)
+    assert result[4, 4] > 100.0
 
 
 def test_simulate_thermal_erosion_returns_path(tmp_path):
