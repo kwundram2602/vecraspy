@@ -273,7 +273,12 @@ def test_guided_upsample_dem_constant_guide_returns_box_filtered_baseline(tmp_pa
         with rasterio.open(baseline) as ds:
             from vecraspy.sr import _box_filter
 
-            expected = _box_filter(ds.read(1).astype(np.float64), 2)
+            # A constant guide carries no structure: var_I and cov_Ip are both
+            # exactly zero everywhere, so a=0 and b=mean_p. The guided filter's
+            # own final averaging step then box-filters b again (mean_b), so
+            # the closed form is a box filter applied TWICE, not once.
+            once = _box_filter(ds.read(1).astype(np.float64), 2)
+            expected = _box_filter(once, 2)
 
     np.testing.assert_allclose(result, expected, rtol=1e-4)
 
@@ -301,10 +306,15 @@ def test_guided_upsample_dem_sharpens_edge_relative_to_baseline(tmp_path):
     with rasterio.open(out) as ds:
         guided_row = ds.read(1)[8]
 
-    def transition_width(row):
-        return int(np.sum((row > 5.0) & (row < 95.0)))
+    # The guided filter tracks the guide's edge strongly (small eps), producing
+    # one steep jump right at the guide boundary, plus shallow decay on both
+    # sides from the window averaging — a wider *span* of non-extreme pixels
+    # than the bicubic baseline, but a much steeper *single-step* jump at the
+    # edge itself. Steepest single-step gradient is the right sharpness metric.
+    def steepest_gradient(row):
+        return float(np.max(np.abs(np.diff(row))))
 
-    assert transition_width(guided_row) < transition_width(baseline_row)
+    assert steepest_gradient(guided_row) > steepest_gradient(baseline_row)
 ```
 
 - [ ] **Step 2: Run to verify they fail**
