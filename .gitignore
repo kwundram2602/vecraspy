@@ -10,3 +10,4 @@ wheels/
 .venv
 notes/
 .claude/
+.worktrees/
