@@ -65,3 +65,28 @@ def _write_multiband_tif(
         nodata=nodata,
     ) as dst:
         dst.write(data)
+
+
+from vecraspy.sr import _box_filter
+
+
+def test_box_filter_constant_array_unchanged():
+    arr = np.full((10, 10), 5.0)
+    result = _box_filter(arr, radius=2)
+    np.testing.assert_allclose(result, arr)
+
+
+def test_box_filter_matches_naive_reference():
+    rng = np.random.default_rng(42)
+    arr = rng.random((10, 10))
+    radius = 2
+    result = _box_filter(arr, radius)
+
+    padded = np.pad(arr, radius, mode="edge")
+    window = 2 * radius + 1
+    expected = np.zeros_like(arr)
+    for i in range(arr.shape[0]):
+        for j in range(arr.shape[1]):
+            expected[i, j] = padded[i : i + window, j : j + window].mean()
+
+    np.testing.assert_allclose(result, expected, rtol=1e-10)
