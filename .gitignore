@@ -12,3 +12,5 @@ notes/
 .claude/
 .worktrees/
 .claudeignore
+# local paths of the QGIS pendant
+qgis.md
