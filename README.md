@@ -3,12 +3,10 @@
 A toolbox of **vec**tor, **ras**ter and terrain utilities
 for **Py**thon geospatial work.
 
-vecraspy collects the functions that tend to get re-written in every remote
+vecraspy collects functions that tend to get re-written in every remote
 sensing / DEM project — clipping and aligning GeoTIFFs, deriving slope, aspect
 and hillshade, building trajectories from point layers, quick-look plotting —
-behind one flat, consistently-shaped API. Nearly every function takes file paths
-in and returns the `Path` it wrote, so pipelines compose without an in-memory
-raster abstraction to learn.
+behind one flat, consistently-shaped API. 
 
 It is built on `rasterio`, `geopandas`/`shapely`, `numpy`, `matplotlib` and
 `whitebox-workflows`. Python 3.13+.
@@ -26,6 +24,7 @@ uv sync --all-extras
 src/vecraspy/
 ├── raster.py    GeoTIFF I/O, clipping, alignment, reprojection, sampling
 ├── vector.py    Point layers, trajectories, AOI construction and filtering
+├── convert.py   AOI ↔ WKT / GeoJSON / bounding box
 ├── terrain.py   Slope, aspect, hillshade (whitebox-workflows backed)
 ├── plot.py      Matplotlib quick-looks with sensible defaults per product
 └── sr.py        DTM super-resolution (guided filter + thermal erosion)
@@ -69,6 +68,22 @@ tests/           pytest suite, one module per source module
 
 `Trajectory` is a lightweight dataclass holding an ordered sequence of points
 plus its id — the common shape for GPS tracks and flight lines.
+
+### Conversion (`vecraspy.convert`)
+
+AOIs can be a `GeoDataFrame`, `GeoSeries`, shapely geometry or a vector file path;
+bounding boxes are `(minx, miny, maxx, maxy)`, given as four numbers or a string
+such as `"7.1,51.9,7.3,52.0"`.
+
+| Function | Purpose |
+| --- | --- |
+| `aoi_to_wkt` | Union of the AOI as WKT, optionally reprojected and rounded |
+| `aoi_to_bbox` | AOI bounding box, optionally in another CRS |
+| `aoi_to_geojson` | Union of the AOI as a GeoJSON geometry (EPSG:4326 by default) |
+| `wkt_to_aoi` | WKT geometry → single-row `GeoDataFrame` |
+| `geojson_to_aoi` | GeoJSON geometry, Feature or FeatureCollection → `GeoDataFrame` |
+| `bbox_to_aoi` | Bounding box → rectangle `GeoDataFrame` |
+| `wkt_to_bbox` / `bbox_to_wkt` | Direct string conversions, no CRS involved |
 
 ### Terrain (`vecraspy.terrain`)
 

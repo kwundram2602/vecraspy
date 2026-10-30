@@ -1,5 +1,15 @@
 """vecraspy — raster and vector utility functions."""
 
+from vecraspy.convert import (
+    aoi_to_bbox,
+    aoi_to_geojson,
+    aoi_to_wkt,
+    bbox_to_aoi,
+    bbox_to_wkt,
+    geojson_to_aoi,
+    wkt_to_aoi,
+    wkt_to_bbox,
+)
 from vecraspy.plot import (
     plot_aspect,
     plot_dsm,
@@ -50,7 +60,12 @@ __all__ = [
     "Trajectory",
     "aggregate_raster",
     "align_raster_grid",
+    "aoi_to_bbox",
+    "aoi_to_geojson",
+    "aoi_to_wkt",
     "aspect",
+    "bbox_to_aoi",
+    "bbox_to_wkt",
     "build_trajectories",
     "build_trajectory",
     "clip_tif_by_aoi",
@@ -59,6 +74,7 @@ __all__ = [
     "extract_raster_values_at_points",
     "filter_by_aoi",
     "filter_tifs_by_aoi",
+    "geojson_to_aoi",
     "get_aoi_center",
     "get_bounds_as_gdf",
     "get_stac_spatial_extent",
@@ -81,5 +97,7 @@ __all__ = [
     "summarize_extracted_raster_values",
     "super_resolve_dtm",
     "tif_bounds_as_polygon",
+    "wkt_to_aoi",
+    "wkt_to_bbox",
     "write_trajectories",
 ]

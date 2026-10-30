@@ -11,9 +11,10 @@ from typing import Any, Literal
 import geopandas as gpd
 import numpy as np
 from shapely import concave_hull
-from shapely.geometry import MultiPoint
+from shapely.geometry import MultiPoint, box
 from shapely.geometry.base import BaseGeometry
-from shapely.geometry import box
+
+from vecraspy.convert import aoi_to_bbox
 
 
 @dataclass
@@ -308,16 +309,11 @@ def get_aoi_center(aoi: gpd.GeoDataFrame) -> tuple[float, float]:
     return lat, lon
 
 
-def get_stac_spatial_extent(aoi: gpd.GeoDataFrame) -> list:
+def get_stac_spatial_extent(aoi: gpd.GeoDataFrame) -> list[float]:
+    """Return the AOI's bbox in EPSG:4326 as ``[west, south, east, north]``.
 
-    if aoi.crs is None:
-        raise ValueError(
-            "AOI has no CRS defined; cannot compute spatial extent in EPSG:4326."
-        )
-
-    if aoi.crs.to_epsg() != 4326:
-        aoi = aoi.to_crs(epsg=4326)
-
-    west, south, east, north = aoi.total_bounds
-    return [west, south, east, north]
+    Raises:
+        ValueError: If aoi has no CRS defined.
+    """
+    return list(aoi_to_bbox(aoi, crs="EPSG:4326"))
 
